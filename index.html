@@ -1,0 +1,2192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tesla Telemetry — Live Drive Visualizer</title>
+<style>
+:root{
+  --bg:#0a0e14; --panel:#10161f; --panel2:#0c1118;
+  --line:rgba(148,163,184,.16); --line2:rgba(148,163,184,.08);
+  --text:#e6edf3; --muted:#8b98a9; --dim:#5b6b7d;
+  --teal:#2dd4bf; --coral:#fb7185; --amber:#fbbf24; --sky:#38bdf8;
+  --violet:#a78bfa; --green:#4ade80; --red:#f87171;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  font-variant-numeric:tabular-nums;}
+h1{font-size:20px;margin:0;letter-spacing:.02em}
+h2{font-size:15px;margin:0;font-weight:600;letter-spacing:.04em}
+h3{font-size:13px;margin:0;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.08em}
+a{color:var(--teal)}
+/* ---------- status bar ---------- */
+.statusbar{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:10px;align-items:center;
+  padding:10px 16px;background:rgba(10,14,20,.92);backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--line);}
+.brand{display:flex;align-items:center;gap:10px;margin-right:6px}
+.brand .dot{width:12px;height:12px;border-radius:50%;background:var(--teal);box-shadow:0 0 12px var(--teal)}
+.badge{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;
+  border:1px solid var(--line);background:#131a24;font-size:13px;font-weight:600;white-space:nowrap}
+.badge .bd{width:9px;height:9px;border-radius:50%;background:var(--dim)}
+.badge.live .bd{background:var(--green);box-shadow:0 0 8px var(--green)}
+.badge.sim .bd{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+.badge.none .bd{background:var(--red);box-shadow:0 0 8px var(--red)}
+.stat-chip{padding:6px 10px;border-radius:10px;background:#131a24;border:1px solid var(--line2);
+  font-size:13px;color:var(--muted);white-space:nowrap}
+.stat-chip b{color:var(--text);font-weight:600}
+.spacer{flex:1}
+.btn{min-height:44px;padding:10px 16px;border-radius:12px;border:1px solid var(--line);
+  background:#1a2230;color:var(--text);font-size:15px;font-weight:600;cursor:pointer;touch-action:manipulation}
+.btn:active{transform:scale(.97)}
+.btn.primary{background:var(--teal);border-color:var(--teal);color:#04211d}
+.btn.warn{background:#3a2b12;border-color:#6b4d16;color:var(--amber)}
+.btn.ghost{background:transparent}
+.btn[disabled]{opacity:.45;cursor:default}
+.btn.on{background:var(--teal);color:#04211d;border-color:var(--teal)}
+/* ---------- banner ---------- */
+.banner{display:none;margin:14px 16px 0;padding:14px 16px;border-radius:14px;
+  background:#2a1418;border:1px solid rgba(251,113,133,.4);font-size:15px;line-height:1.5}
+.banner.show{display:block}
+.banner b{color:var(--coral)}
+/* ---------- hero ---------- */
+.hero{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;padding:16px}
+.hero-tile{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px 16px;min-width:0}
+.hero-tile .lab{color:var(--muted);font-size:11px;letter-spacing:.09em;text-transform:uppercase;font-weight:600}
+.hero-num{font-size:40px;font-weight:700;line-height:1.08;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hero-num small{font-size:16px;color:var(--muted);font-weight:600}
+.hero-sub{color:var(--dim);font-size:12px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hero-tile.accent{border-color:rgba(45,212,191,.45)}
+.hero-tile.accent .hero-num{color:var(--teal)}
+.hero-tile.coral .hero-num{color:var(--coral)}
+/* ---------- panels ---------- */
+.panels{display:grid;grid-template-columns:repeat(auto-fill,minmax(370px,1fr));gap:14px;padding:0 16px 24px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px;min-width:0}
+.panel.wide{grid-column:span 2}
+.panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+.live-dot{width:8px;height:8px;border-radius:50%;background:var(--teal);box-shadow:0 0 8px var(--teal);flex:none}
+canvas{width:100%;display:block}
+.big{font-size:34px;font-weight:700;line-height:1.1;margin-top:6px}
+.big small{font-size:15px;color:var(--muted);font-weight:600}
+.tip{color:var(--muted);font-size:13px;line-height:1.5;margin:10px 0 0}
+.tip b{color:var(--text)}
+.ov-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px}
+.ov-row label{font-size:13px;color:var(--muted)}
+select{min-height:40px;padding:8px 10px;border-radius:10px;border:1px solid var(--line);
+  background:#1a2230;color:var(--text);font-size:14px;max-width:100%}
+.ov-scale{font-size:12px;color:var(--sky);margin-left:auto}
+.kv{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--line2);font-size:14px}
+.kv:last-child{border-bottom:0}
+.kv .k{color:var(--muted)}
+.kv .v{font-weight:600;text-align:right}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px}
+.tile{background:var(--panel2);border:1px solid var(--line2);border-radius:12px;padding:10px 12px}
+.tile .tv{font-size:22px;font-weight:700}
+.tile .tl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-top:2px}
+ul.ev{list-style:none;margin:0;padding:0;max-height:220px;overflow:auto}
+ul.ev li{display:flex;justify-content:space-between;gap:8px;padding:8px 2px;border-bottom:1px solid var(--line2);font-size:14px}
+ul.ev li:last-child{border-bottom:0}
+ul.ev .t{color:var(--muted);white-space:nowrap}
+ul.ev .g{color:var(--coral);font-weight:700;white-space:nowrap}
+ul.ev .g.pos{color:var(--green)}
+.empty{color:var(--dim);font-size:14px;padding:10px 2px}
+.bars{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+.bar-row{display:grid;grid-template-columns:86px 1fr 64px;gap:10px;align-items:center;font-size:14px}
+.bar-track{height:16px;border-radius:8px;background:#1a2230;overflow:hidden}
+.bar-fill{height:100%;border-radius:8px;background:var(--teal)}
+.bar-fill.c2{background:var(--sky)} .bar-fill.c3{background:var(--amber)} .bar-fill.c4{background:var(--coral)}
+.bar-row .bv{text-align:right;font-weight:600}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--muted);margin-top:8px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.foot{padding:0 16px 28px;color:var(--dim);font-size:12px;line-height:1.6}
+.foot b{color:var(--muted)}
+
+/* ---------- graphs over time ---------- */
+.section-title{grid-column:1 / -1;font-size:18px;font-weight:700;letter-spacing:.03em;padding:4px 2px 0}
+.graphs{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:0 16px 24px}
+.graph-hero{grid-column:span 2}
+.graphs canvas{height:230px}
+.graph-hero canvas{height:340px}
+.type-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:10px}
+.type-row label{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:8px}
+.ov-note{font-size:12px;color:var(--dim);line-height:1.4;flex:1;min-width:200px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.chip{min-height:44px;padding:10px 16px;border-radius:999px;border:1px solid var(--line);background:#1a2230;color:var(--text);font-size:14px;font-weight:600;cursor:pointer;touch-action:manipulation}
+.chip.on{background:var(--teal);border-color:var(--teal);color:#04211d}
+.chip:active{transform:scale(.96)}
+@media (max-width:820px){
+  .panels{grid-template-columns:1fr}
+  .graphs{grid-template-columns:1fr}
+  .graph-hero{grid-column:span 1}
+  .graph-hero canvas{height:280px}
+  .panel.wide{grid-column:span 1}
+  .hero-num{font-size:32px}
+  .statusbar{padding:10px 12px}
+  h1{font-size:17px}
+}
+</style>
+</head>
+<body>
+
+<header class="statusbar">
+  <div class="brand"><span class="dot"></span><h1>Tesla Telemetry</h1></div>
+  <span class="badge none" id="srcBadge"><span class="bd"></span><span id="srcBadgeText">NO SIGNAL</span></span>
+  <span class="stat-chip">Last fix <b id="lastFix">—</b></span>
+  <span class="stat-chip">Accuracy <b id="gpsAcc">—</b></span>
+  <span class="stat-chip">Fixes <b id="fixCount">0</b></span>
+  <span class="spacer"></span>
+  <button class="btn ghost" id="unitsBtn" type="button">mph / ft</button>
+  <button class="btn primary" id="btnStart" type="button">Start GPS</button>
+  <button class="btn" id="btnPause" type="button" disabled>Pause</button>
+  <button class="btn" id="btnReset" type="button">Reset</button>
+  <button class="btn warn" id="btnSim" type="button">Simulator: Off</button>
+  <button class="btn" id="btnExport" type="button">Export CSV</button>
+</header>
+
+<div class="banner" id="gpsMsg"></div>
+
+<main>
+<section class="hero" aria-label="Live readouts">
+  <div class="hero-tile accent"><div class="lab">Speed</div><div class="hero-num" id="hSpeed">0 <small>mph</small></div><div class="hero-sub" id="hSpeedSub">standing still</div></div>
+  <div class="hero-tile"><div class="lab">Altitude</div><div class="hero-num" id="hAlt">—</div><div class="hero-sub" id="hAltSub">GPS altitude</div></div>
+  <div class="hero-tile"><div class="lab">Vertical speed</div><div class="hero-num" id="hVspeed">—</div><div class="hero-sub">climb / sink rate</div></div>
+  <div class="hero-tile"><div class="lab">Acceleration</div><div class="hero-num" id="hAccel">0.00 <small>g</small></div><div class="hero-sub" id="hAccelSub">longitudinal</div></div>
+  <div class="hero-tile coral"><div class="lab">Peak deceleration</div><div class="hero-num" id="hDecel">0.00 <small>g</small></div><div class="hero-sub">hardest braking this trip</div></div>
+  <div class="hero-tile"><div class="lab">Distance</div><div class="hero-num" id="hDist">0.00 <small>mi</small></div><div class="hero-sub" id="hDistSub">trip total</div></div>
+  <div class="hero-tile"><div class="lab">Trip time</div><div class="hero-num" id="hTime">00:00</div><div class="hero-sub">moving + stopped</div></div>
+  <div class="hero-tile"><div class="lab">Average speed</div><div class="hero-num" id="hAvg">0 <small>mph</small></div><div class="hero-sub">distance / trip time</div></div>
+  <div class="hero-tile"><div class="lab">Max speed</div><div class="hero-num" id="hMax">0 <small>mph</small></div><div class="hero-sub" id="hMaxSub">—</div></div>
+  <div class="hero-tile"><div class="lab">Heading</div><div class="hero-num" id="hHead">—</div><div class="hero-sub" id="hHeadSub">compass</div></div>
+  <div class="hero-tile"><div class="lab">Latitude</div><div class="hero-num" id="hLat" style="font-size:26px">—</div><div class="hero-sub">WGS-84</div></div>
+  <div class="hero-tile"><div class="lab">Longitude</div><div class="hero-num" id="hLon" style="font-size:26px">—</div><div class="hero-sub">WGS-84</div></div>
+  <div class="hero-tile"><div class="lab">Elevation gain</div><div class="hero-num" id="hGain">0 <small>ft</small></div><div class="hero-sub">total climbed</div></div>
+  <div class="hero-tile"><div class="lab">Elevation loss</div><div class="hero-num" id="hLoss">0 <small>ft</small></div><div class="hero-sub">total descended</div></div>
+  <div class="hero-tile"><div class="lab">Current g-force</div><div class="hero-num" id="hG">0.00 <small>g</small></div><div class="hero-sub" id="hGSub">combined accel</div></div>
+</section>
+
+<section class="graphs" id="graphsOverTime">
+  <h2 class="section-title">Graphs over time</h2>
+
+  <!-- 3 Speed history -->
+  <section class="panel graph-hero" id="p-ch-speed">
+    <div class="panel-head"><h2>Speed History</h2><span class="live-dot"></span></div>
+    <div class="type-row"><label>View <select class="vtype" id="vtSpeed" data-chart="speed"></select></label><label class="xy-label" id="xyWrapSpeed" style="display:none">X axis <select class="xy" id="xySpeed" data-chart="speed"></select></label><span class="ov-note" id="ovNoteSpeed"></span></div>
+    <div class="chips" id="ovChipsSpeed"></div>
+    <canvas id="chSpeed" height="300"></canvas>
+    <div class="legend" id="legSpeed"></div>
+    <p class="tip" id="tipSpeed">Dots are raw GPS fixes; the line is smoothed between them. Long flat stretches at zero are stops — compare their length to the moving stretches to see how much of the trip was waiting.</p>
+  </section>
+
+  <!-- 4 Altitude profile -->
+  <section class="panel graph-hero" id="p-ch-alt">
+    <div class="panel-head"><h2>Altitude Profile</h2><span class="live-dot"></span></div>
+    <div class="type-row"><label>View <select class="vtype" id="vtAlt" data-chart="alt"></select></label><label class="xy-label" id="xyWrapAlt" style="display:none">X axis <select class="xy" id="xyAlt" data-chart="alt"></select></label><span class="ov-note" id="ovNoteAlt"></span></div>
+    <div class="chips" id="ovChipsAlt"></div>
+    <canvas id="chAlt" height="300"></canvas>
+    <div class="legend" id="legAlt"></div>
+    <p class="tip" id="tipAlt">A real hill is a slow, rounded rise. Sharp single-point spikes are GPS altitude noise — the gain/loss totals filter those out, so trust the totals more than any one spike.</p>
+  </section>
+
+  <!-- 5 Acceleration history -->
+  <section class="panel graph-hero" id="p-ch-accel">
+    <div class="panel-head"><h2>Acceleration History</h2><span class="live-dot"></span></div>
+    <div class="type-row"><label>View <select class="vtype" id="vtAccel" data-chart="accel"></select></label><label class="xy-label" id="xyWrapAccel" style="display:none">X axis <select class="xy" id="xyAccel" data-chart="accel"></select></label><span class="ov-note" id="ovNoteAccel"></span></div>
+    <div class="chips" id="ovChipsAccel"></div>
+    <canvas id="chAccel" height="300"></canvas>
+    <div class="legend" id="legAccel"></div>
+    <p class="tip" id="tipAccel">Above the line is speeding up, below is braking. Because fixes arrive ~30 s apart, this is a coarse average between fixes — a tall narrow spike usually means a short hard brake, not a data error.</p>
+  </section>
+
+  <!-- 7 Distance over time -->
+  <section class="panel graph-hero" id="p-ch-dist">
+    <div class="panel-head"><h2>Distance Over Time</h2><span class="live-dot"></span></div>
+    <div class="type-row"><label>View <select class="vtype" id="vtDist" data-chart="dist"></select></label><label class="xy-label" id="xyWrapDist" style="display:none">X axis <select class="xy" id="xyDist" data-chart="dist"></select></label><span class="ov-note" id="ovNoteDist"></span></div>
+    <div class="chips" id="ovChipsDist"></div>
+    <canvas id="chDist" height="300"></canvas>
+    <div class="legend" id="legDist"></div>
+    <p class="tip" id="tipDist">The slope of this line IS your speed: steep means fast, flat means stopped. A kink in the slope is where the drive changed character — a light, a turn, a new road.</p>
+  </section>
+
+  <!-- 6 Vertical speed history -->
+  <section class="panel" id="p-ch-vspeed">
+    <div class="panel-head"><h2>Vertical Speed History</h2><span class="live-dot"></span></div>
+    <div class="type-row"><label>View <select class="vtype" id="vtVspeed" data-chart="vspeed"></select></label><label class="xy-label" id="xyWrapVspeed" style="display:none">X axis <select class="xy" id="xyVspeed" data-chart="vspeed"></select></label><span class="ov-note" id="ovNoteVspeed"></span></div>
+    <div class="chips" id="ovChipsVspeed"></div>
+    <canvas id="chVspeed" height="210"></canvas>
+    <div class="legend" id="legVspeed"></div>
+    <p class="tip" id="tipVspeed">Positive is climbing, negative is descending. Sustained values of a few feet per second are real grades; rapid flips between positive and negative are altitude noise, not the road.</p>
+  </section>
+
+  <!-- 8 Heading over time -->
+  <section class="panel" id="p-ch-heading">
+    <div class="panel-head"><h2>Heading Over Time</h2><span class="live-dot"></span></div>
+    <div class="type-row"><label>View <select class="vtype" id="vtHeading" data-chart="heading"></select></label><label class="xy-label" id="xyWrapHeading" style="display:none">X axis <select class="xy" id="xyHeading" data-chart="heading"></select></label><span class="ov-note" id="ovNoteHeading"></span></div>
+    <div class="chips" id="ovChipsHeading"></div>
+    <canvas id="chHeading" height="210"></canvas>
+    <div class="legend" id="legHeading"></div>
+    <p class="tip" id="tipHeading">Flat sections are straight roads; smooth ramps are curves; near-vertical jumps are turns. A heading that wanders while speed is zero is GPS drift in the garage, not the car moving.</p>
+  </section>
+
+  <!-- 16 Elevation vs distance -->
+  <section class="panel" id="p-elev-dist">
+    <div class="panel-head"><h2>Elevation Profile vs Distance</h2><span class="live-dot"></span></div>
+    <div class="type-row"><label>View <select class="vtype" id="vtElevDist" data-chart="elevDist"></select></label><label class="xy-label" id="xyWrapElevDist" style="display:none">X axis <select class="xy" id="xyElevDist" data-chart="elevDist"></select></label><span class="ov-note" id="ovNoteElevDist"></span></div>
+    <div class="chips" id="ovChipsElevDist"></div>
+    <canvas id="chElevDist" height="210"></canvas>
+    <div class="legend" id="legElevDist"></div>
+    <p class="tip" id="tipElevDist">This is the road's true shape: distance along the bottom, height on the side. The steepest climbs are where the grade is worst — overlay speed to see exactly how much each hill cost you.</p>
+  </section>
+
+  <!-- 26 Cumulative elevation -->
+  <section class="panel" id="p-elev-cum">
+    <div class="panel-head"><h2>Cumulative Elevation Gain / Loss</h2><span class="live-dot"></span></div>
+    <div class="type-row"><label>View <select class="vtype" id="vtElevCum" data-chart="elevCum"></select></label><label class="xy-label" id="xyWrapElevCum" style="display:none">X axis <select class="xy" id="xyElevCum" data-chart="elevCum"></select></label><span class="ov-note" id="ovNoteElevCum"></span></div>
+    <div class="chips" id="ovChipsElevCum"></div>
+    <canvas id="chElevCum" height="210"></canvas>
+    <div class="legend" id="legElevCum"></div>
+    <p class="tip" id="tipElevCum">Two running totals: everything climbed and everything descended. On a loop drive they should nearly match; a big gap means the trip ended much higher — or lower — than it started.</p>
+  </section>
+
+  <!-- 28 GPS accuracy over time -->
+  <section class="panel" id="p-acc">
+    <div class="panel-head"><h2>GPS Accuracy Over Time</h2><span class="live-dot"></span></div>
+    <div class="type-row"><label>View <select class="vtype" id="vtAcc" data-chart="acc"></select></label><label class="xy-label" id="xyWrapAcc" style="display:none">X axis <select class="xy" id="xyAcc" data-chart="acc"></select></label><span class="ov-note" id="ovNoteAcc"></span></div>
+    <div class="chips" id="ovChipsAcc"></div>
+    <canvas id="chAcc" height="210"></canvas>
+    <div class="legend" id="legAcc"></div>
+    <p class="tip" id="tipAcc">Lower is better: under 10 m is a good fix, over 50 m is a rough one. Accuracy usually worsens in parking garages, between tall buildings, and under tree cover — exactly where the trail also gets jumpy.</p>
+  </section>
+</section>
+
+<section class="panels" id="panels">
+
+  <!-- 1 Speedometer gauge -->
+  <section class="panel" id="p-gauge-speed">
+    <div class="panel-head"><h2>Speedometer</h2><span class="live-dot"></span></div>
+    <canvas id="gaugeSpeed" height="230"></canvas>
+    <div class="big" id="gaugeSpeedVal">0 <small>mph</small></div>
+    <p class="tip">The arc sweeps 0–120. A needle that climbs in smooth steps means steady throttle; a needle that jumps between fixes is the Tesla browser's ~30-second GPS rhythm, not your driving.</p>
+  </section>
+
+  <!-- 2 Altitude gauge -->
+  <section class="panel" id="p-gauge-alt">
+    <div class="panel-head"><h2>Altitude Gauge</h2><span class="live-dot"></span></div>
+    <canvas id="gaugeAlt" height="230"></canvas>
+    <div class="big" id="gaugeAltVal">—</div>
+    <p class="tip">GPS altitude in the Tesla browser is often null or jumpy — a flat needle with a dash means the car is not reporting elevation at all. When it works, watch it drift slowly on hills, never in sharp steps.</p>
+  </section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+  <!-- 9 G-force circle -->
+  <section class="panel" id="p-gcircle">
+    <div class="panel-head"><h2>G-Force Circle</h2><span class="live-dot"></span></div>
+    <canvas id="gCircle" height="260"></canvas>
+    <p class="tip">Longitudinal g (brake/accelerate) runs left–right, lateral g (cornering) runs up–down — the lateral value is derived from how fast your heading changes times your speed. A dot near the edge is a hard maneuver; a tight cluster near the center is a calm drive.</p>
+  </section>
+
+  <!-- 10 Compass rose -->
+  <section class="panel" id="p-compass">
+    <div class="panel-head"><h2>Compass Rose</h2><span class="live-dot"></span></div>
+    <canvas id="compass" height="260"></canvas>
+    <div class="big" id="compassVal">—</div>
+    <p class="tip">The needle points the way the car is travelling, not the way it is parked. If it spins while you are stopped, that is GPS heading noise — the compass only means something above a few mph.</p>
+  </section>
+
+  <!-- 11 Breadcrumb trail -->
+  <section class="panel wide" id="p-trail">
+    <div class="panel-head"><h2>Route Trail</h2><span class="live-dot"></span></div>
+    <canvas id="trail" height="300"></canvas>
+    <div class="legend"><span><i style="background:#2dd4bf"></i>Path</span><span><i style="background:#4ade80"></i>Start</span><span><i style="background:#fb7185"></i>Current position</span><span>Arrows show heading at each fix</span></div>
+    <p class="tip">A self-drawn trail — no map tiles, no internet needed. Straight segments between fixes are the honest picture: with ~30-second fixes, every curve is really a series of short straight chords.</p>
+  </section>
+
+  <!-- 12 Speed histogram -->
+  <section class="panel" id="p-hist-speed">
+    <div class="panel-head"><h2>Speed Histogram</h2><span class="live-dot"></span></div>
+    <canvas id="histSpeed" height="210"></canvas>
+    <p class="tip">Where the bars pile up is your cruising speed. A tall bar at zero means lots of stopped time; a wide spread means mixed city driving; a narrow peak means steady highway cruising.</p>
+  </section>
+
+  <!-- 13 Altitude histogram -->
+  <section class="panel" id="p-hist-alt">
+    <div class="panel-head"><h2>Altitude Histogram</h2><span class="live-dot"></span></div>
+    <canvas id="histAlt" height="210"></canvas>
+    <p class="tip">This shows which elevations you spent the most time at. Two separated humps usually mean two different areas — a valley and a plateau — rather than one rolling road.</p>
+  </section>
+
+  <!-- 14 Acceleration histogram -->
+  <section class="panel" id="p-hist-accel">
+    <div class="panel-head"><h2>Acceleration Histogram</h2><span class="live-dot"></span></div>
+    <canvas id="histAccel" height="210"></canvas>
+    <p class="tip">A symmetric hump around zero is a smooth driver. A long tail to the left means repeated hard braking; a long tail to the right means repeated hard launches. The shape is your driving style in one picture.</p>
+  </section>
+
+  <!-- 15 Speed bands -->
+  <section class="panel" id="p-bands">
+    <div class="panel-head"><h2>Speed Bands — Time Spent</h2><span class="live-dot"></span></div>
+    <div class="bars" id="speedBands"></div>
+    <p class="tip">Time in each speed band, not distance. If the 0–20 band dominates a "highway" trip, you spent the trip in traffic or at lights — the band split tells the truth the average speed hides.</p>
+  </section>
+
+
+
+  <!-- 17 Trip stats tiles -->
+  <section class="panel wide" id="p-stats">
+    <div class="panel-head"><h2>Trip Statistics</h2><span class="live-dot"></span></div>
+    <div class="tiles" id="statsTiles"></div>
+    <p class="tip">The trip in numbers. Moving time excludes stops, so average moving speed is the honest measure of the roads — compare it with overall average speed to see how much stopping cost you.</p>
+  </section>
+
+  <!-- 18 0-60 timer -->
+  <section class="panel" id="p-z60">
+    <div class="panel-head"><h2>0–60 mph Timer</h2><span class="live-dot"></span></div>
+    <div class="big" id="z60Val">—</div>
+    <div class="kv"><span class="k">Best this trip</span><span class="v" id="z60Best">—</span></div>
+    <div class="kv"><span class="k">Status</span><span class="v" id="z60Status">waiting for a launch</span></div>
+    <p class="tip">Timing starts the moment you roll away from a full stop and ends at 60 mph. With ~30-second GPS fixes this is an estimate, not a drag-strip slip — the simulator gives the cleanest demo of how it works.</p>
+  </section>
+
+  <!-- 19 Braking events -->
+  <section class="panel" id="p-brake">
+    <div class="panel-head"><h2>Braking Events</h2><span class="live-dot"></span></div>
+    <ul class="ev" id="brakeList"><li class="empty">No braking events yet.</li></ul>
+    <p class="tip">Every hard slowdown is logged with its peak g. Events over about 0.3 g are firm stops; over 0.5 g is emergency-style braking. A cluster of them in one stretch means stop-and-go traffic.</p>
+  </section>
+
+  <!-- 20 Acceleration events -->
+  <section class="panel" id="p-accel-events">
+    <div class="panel-head"><h2>Acceleration Events</h2><span class="live-dot"></span></div>
+    <ul class="ev" id="accelList"><li class="empty">No acceleration events yet.</li></ul>
+    <p class="tip">Every strong launch is logged with its peak g. Compare the from/to speeds — short bursts to low speed are city pulls; long pulls to highway speed are on-ramps and passing moves.</p>
+  </section>
+
+  <!-- 21 Max speed marker -->
+  <section class="panel" id="p-maxspeed">
+    <div class="panel-head"><h2>Max Speed Marker</h2><span class="live-dot"></span></div>
+    <div class="big" id="maxSpeedVal">0 <small>mph</small></div>
+    <div class="kv"><span class="k">Reached at</span><span class="v" id="maxSpeedTime">—</span></div>
+    <div class="kv"><span class="k">Trip distance at that moment</span><span class="v" id="maxSpeedDist">—</span></div>
+    <div class="bars" style="margin-top:12px"><div class="bar-row"><span>vs 100 mph</span><div class="bar-track"><div class="bar-fill c4" id="maxSpeedBar" style="width:0%"></div></div><span class="bv" id="maxSpeedPct">0%</span></div></div>
+    <p class="tip">Your fastest moment this trip, and where it happened. If the marker lands in the first minutes, that was probably an on-ramp; late in the trip, an open stretch of road.</p>
+  </section>
+
+  <!-- 22 Last-60s ribbon -->
+  <section class="panel wide" id="p-ribbon">
+    <div class="panel-head"><h2>Current Segment — Last 60 Seconds</h2><span class="live-dot"></span></div>
+    <canvas id="ribbon" height="120"></canvas>
+    <p class="tip">A scrolling ribbon of the last minute of speed. On real GPS it updates about every 30 seconds, so it moves in steps — that is the car's update rhythm. In the simulator it flows every second, which is how it looks with dense data.</p>
+  </section>
+
+  <!-- 23 Speed vs altitude scatter -->
+  <section class="panel" id="p-scat-alt">
+    <div class="panel-head"><h2>Speed vs Altitude</h2><span class="live-dot"></span></div>
+    <canvas id="scatSpeedAlt" height="230"></canvas>
+    <p class="tip">Each dot is one moment: height on the side, speed along the bottom. A downward slope in the cloud means you go slower up high — hills, grades, or mountain roads. A flat cloud means altitude never mattered.</p>
+  </section>
+
+  <!-- 24 Accel vs speed scatter -->
+  <section class="panel" id="p-scat-acc">
+    <div class="panel-head"><h2>Acceleration vs Speed</h2><span class="live-dot"></span></div>
+    <canvas id="scatAccelSpeed" height="230"></canvas>
+    <p class="tip">Strong acceleration lives at low speed and fades as speed rises — that taper is the car's power curve. Dots far below the line at high speed are hard braking, usually before a turn or a light.</p>
+  </section>
+
+  <!-- 25 Current g gauge -->
+  <section class="panel" id="p-ggauge">
+    <div class="panel-head"><h2>Current G-Force</h2><span class="live-dot"></span></div>
+    <canvas id="gGauge" height="200"></canvas>
+    <div class="big" id="gGaugeVal">0.00 <small>g</small></div>
+    <p class="tip">Total g right now, combining forward/back and cornering forces. Under 0.15 g is gentle; 0.3 g is firm; 0.6 g and up is a hard maneuver. It reads zero when parked, as it should.</p>
+  </section>
+
+
+
+  <!-- 27 Heading distribution -->
+  <section class="panel" id="p-heading-rose">
+    <div class="panel-head"><h2>Heading Distribution</h2><span class="live-dot"></span></div>
+    <canvas id="headingRose" height="260"></canvas>
+    <p class="tip">Which directions you actually travelled. A city grid shows four spikes at right angles; a highway trip shows one long spoke; a winding road spreads the rose in every direction.</p>
+  </section>
+
+
+
+  <!-- 29 Trip timeline -->
+  <section class="panel wide" id="p-timeline">
+    <div class="panel-head"><h2>Trip Timeline</h2><span class="live-dot"></span></div>
+    <canvas id="timeline" height="90"></canvas>
+    <div class="legend"><span><i style="background:#2dd4bf"></i>Driving</span><span><i style="background:#5b6b7d"></i>Stopped</span><span><i style="background:#fb7185"></i>Hard braking</span><span><i style="background:#4ade80"></i>Hard acceleration</span></div>
+    <p class="tip">The whole trip as one strip. The pattern of green and grey shows the rhythm of the drive at a glance — long green runs are open road, grey blocks are stops, red ticks are the moments you braked hard.</p>
+  </section>
+
+  <!-- 30 Position readout -->
+  <section class="panel" id="p-pos">
+    <div class="panel-head"><h2>Position &amp; Fix Quality</h2><span class="live-dot"></span></div>
+    <div class="kv"><span class="k">Latitude</span><span class="v" id="posLat">—</span></div>
+    <div class="kv"><span class="k">Longitude</span><span class="v" id="posLon">—</span></div>
+    <div class="kv"><span class="k">Fix accuracy</span><span class="v" id="posAcc">—</span></div>
+    <div class="kv"><span class="k">Fixes received</span><span class="v" id="posFixes">0</span></div>
+    <div class="kv"><span class="k">Last fix</span><span class="v" id="posLast">—</span></div>
+    <div class="kv"><span class="k">Gyroscope / motion</span><span class="v" id="motionStatus">checking…</span></div>
+    <p class="tip">Raw fix data, unfiltered. The Tesla browser does not expose a gyroscope, so motion is derived from GPS alone — this panel tells you honestly what the car is actually giving us.</p>
+  </section>
+
+  <!-- 31 Vertical speed gauge -->
+  <section class="panel" id="p-gauge-vspeed">
+    <div class="panel-head"><h2>Vertical Speed Gauge</h2><span class="live-dot"></span></div>
+    <canvas id="gaugeVspeed" height="200"></canvas>
+    <div class="big" id="gaugeVspeedVal">—</div>
+    <p class="tip">Climb rate in feet per minute. A steady 300–600 fpm is a real grade; a needle that flickers between positive and negative is altitude noise. It reads a dash when the car reports no altitude.</p>
+  </section>
+
+  <!-- 32 Speed trend sparkline -->
+  <section class="panel" id="p-spark">
+    <div class="panel-head"><h2>Speed Trend</h2><span class="live-dot"></span></div>
+    <canvas id="sparkSpeed" height="110"></canvas>
+    <div class="big" id="sparkDelta">—</div>
+    <p class="tip">Speed now versus one minute ago. A rising trend with a flat road ahead means you are still accelerating into the cruise; a falling trend on a flat road means you lifted off or are coasting down.</p>
+  </section>
+
+  <!-- 33 Stop log -->
+  <section class="panel" id="p-stops">
+    <div class="panel-head"><h2>Stop Log</h2><span class="live-dot"></span></div>
+    <ul class="ev" id="stopList"><li class="empty">No stops recorded yet.</li></ul>
+    <p class="tip">Every stop longer than a few seconds, with its length. Short stops are lights and signs; long ones are destinations, charging, or waiting. The longest stop usually is the point of the trip.</p>
+  </section>
+
+  <!-- 34 Speed percentiles -->
+  <section class="panel" id="p-pct">
+    <div class="panel-head"><h2>Speed Percentiles</h2><span class="live-dot"></span></div>
+    <div class="tiles">
+      <div class="tile"><div class="tv" id="p50">—</div><div class="tl">Median (P50)</div></div>
+      <div class="tile"><div class="tv" id="p90">—</div><div class="tl">P90</div></div>
+      <div class="tile"><div class="tv" id="p99">—</div><div class="tl">P99</div></div>
+    </div>
+    <div class="bars" style="margin-top:12px"><div class="bar-row"><span>P50</span><div class="bar-track"><div class="bar-fill" id="pctBar50" style="width:0%"></div></div><span class="bv" id="pctVal50">—</span></div>
+    <div class="bar-row"><span>P90</span><div class="bar-track"><div class="bar-fill c2" id="pctBar90" style="width:0%"></div></div><span class="bv" id="pctVal90">—</span></div>
+    <div class="bar-row"><span>P99</span><div class="bar-track"><div class="bar-fill c3" id="pctBar99" style="width:0%"></div></div><span class="bv" id="pctVal99">—</span></div></div>
+    <p class="tip">Half your moving time was below the median; only 10% was above P90. If P90 is close to your max, you spent real time at speed; if P99 is far above P90, your top speed was one brief moment.</p>
+  </section>
+
+</section>
+</main>
+
+<footer class="foot">
+  <b>Honest limits in the Tesla browser:</b> GPS updates arrive roughly once every 30 seconds and positions are quantized, so speed, acceleration and g-force are derived from those sparse fixes — smooth in the simulator, steppy in the real car. GPS altitude is frequently null. The browser exposes no gyroscope and DeviceMotionEvent fires nothing here, so there is no true accelerometer feed. Nothing leaves this page: no map tiles, no weather calls, no server — units preference is the only thing saved, in localStorage.
+</footer>
+
+<script>
+(function(){
+'use strict';
+/* ================= utilities ================= */
+var R_EARTH = 6371000;
+function toRad(d){ return d * Math.PI / 180; }
+function toDeg(r){ return r * 180 / Math.PI; }
+function clamp(v,a,b){ return v < a ? a : (v > b ? b : v); }
+function haversine(lat1,lon1,lat2,lon2){
+  var dLat = toRad(lat2-lat1), dLon = toRad(lon2-lon1);
+  var a = Math.sin(dLat/2)*Math.sin(dLat/2) +
+    Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)*Math.sin(dLon/2);
+  return 2 * R_EARTH * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+function bearing(lat1,lon1,lat2,lon2){
+  var dLon = toRad(lon2-lon1);
+  var y = Math.sin(dLon)*Math.cos(toRad(lat2));
+  var x = Math.cos(toRad(lat1))*Math.sin(toRad(lat2)) -
+    Math.sin(toRad(lat1))*Math.cos(toRad(lat2))*Math.cos(dLon);
+  var br = toDeg(Math.atan2(y,x));
+  return (br + 360) % 360;
+}
+function $(id){ return document.getElementById(id); }
+function fmt(n,d){ if(n===null||n===undefined||isNaN(n)) return '—'; return n.toFixed(d===undefined?1:d); }
+function pad2(n){ return (n<10?'0':'')+n; }
+function fmtClock(ms){
+  var s = Math.floor(ms/1000);
+  var h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
+  if(h>0) return h+':'+pad2(m)+':'+pad2(sec);
+  return pad2(m)+':'+pad2(sec);
+}
+function fmtTimeOfDay(ms){
+  var d = new Date(ms);
+  return pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds());
+}
+function cardinal(deg){
+  if(deg===null||deg===undefined||isNaN(deg)) return '—';
+  var dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  return dirs[Math.round(((deg%360)+360)%360/22.5)%16];
+}
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+
+/* ================= state ================= */
+var S = {
+  mode:'none',            // 'none' | 'gps' | 'sim'
+  running:false, paused:false,
+  watchId:null,
+  fixes:[], samples:[],   // samples: {t,lat,lon,alt,speed,vspeed,accel,dist,heading,g,latG,acc}
+  tripStart:null, lastFix:null, lastFixTime:0,
+  tripDist:0, maxSpeed:0, maxSpeedAt:null, maxSpeedDist:0,
+  maxAccel:0, maxDecel:0, // m/s^2 signed extremes
+  elevGain:0, elevLoss:0,
+  brakeEvents:[], accelEvents:[], stops:[],
+  brakeActive:null, accelActive:null, stopActive:null,
+  z60Armed:false, z60Start:0, z60Last:null, z60Best:null,
+  units:'imperial',
+  motionStatus:'checking…',
+  sim:null
+};
+try{
+  var u = localStorage.getItem('tesla-telemetry-units');
+  if(u==='metric'||u==='imperial') S.units = u;
+}catch(e){}
+
+/* ================= units ================= */
+function U(){ return S.units; }
+function speedVal(ms){ return U()==='imperial' ? ms*2.23694 : ms*3.6; }       // mph or km/h
+function speedUnit(){ return U()==='imperial' ? 'mph' : 'km/h'; }
+function speedMax(){ return U()==='imperial' ? 120 : 200; }
+function distVal(m){ return U()==='imperial' ? m/1609.34 : m/1000; }
+function distUnit(){ return U()==='imperial' ? 'mi' : 'km'; }
+function altVal(m){ return U()==='imperial' ? m*3.28084 : m; }
+function altUnit(){ return U()==='imperial' ? 'ft' : 'm'; }
+function vspeedVal(ms){ return U()==='imperial' ? ms*196.85 : ms*60; }        // ft/min or m/min
+function vspeedUnit(){ return U()==='imperial' ? 'ft/min' : 'm/min'; }
+function fmtSpeed(ms,d){ return fmt(speedVal(ms), d===undefined?0:d)+' '+speedUnit(); }
+function fmtDist(m,d){ return fmt(distVal(m), d===undefined?2:d)+' '+distUnit(); }
+function fmtAlt(m,d){ return fmt(altVal(m), d===undefined?0:d)+' '+altUnit(); }
+function fmtAccelG(a){ return fmt(a/9.81,2)+' g'; }
+
+/* ================= derived ingestion (single pipeline for GPS + simulator) ================= */
+function ingestFix(f){
+  if(S.paused) return;
+  var now = f.t;
+  if(S.tripStart===null) S.tripStart = now;
+  S.lastFix = f; S.lastFixTime = now;
+  S.fixes.push(f);
+  var prev = S.samples.length ? S.samples[S.samples.length-1] : null;
+  var smp = { t:now, lat:f.lat, lon:f.lon, alt:(f.alt===null||f.alt===undefined)?null:f.alt,
+    speed:0, vspeed:null, accel:0, dist:S.tripDist, heading:null, g:0, latG:0, acc:f.acc||null };
+  if(prev){
+    var dt = (now - prev.t)/1000;
+    if(dt < 0.5) dt = 0.5; // fixes faster than 2 Hz would inflate derived speed/accel (d/dt)
+    var d = haversine(prev.lat, prev.lon, f.lat, f.lon);
+    // GPS quantisation: ignore sub-3 m jitter when effectively parked
+    if(d < 3 && (!f.speed || f.speed < 0.5)) d = 0;
+    var derived = d/dt;
+    if(derived > 90) derived = 90; // 90 m/s = 201 mph: no road speed is above this
+    var spd = null;
+    if(f.speed!==null && f.speed!==undefined && f.speed>=0 && f.speed<90) spd = f.speed;
+    if(spd===null || Math.abs(spd-derived) > Math.max(3, spd*0.35)) spd = derived;
+    smp.speed = spd;
+    smp.dist = S.tripDist + d;
+    S.tripDist = smp.dist;
+    smp.accel = (spd - prev.speed)/dt;
+    smp.g = smp.accel/9.81;
+    // lateral g from heading rate x speed
+    var hPrev = prev.heading, hNow = null;
+    if(f.heading!==null && f.heading!==undefined && !isNaN(f.heading)) hNow = f.heading;
+    else if(d > 5) hNow = bearing(prev.lat, prev.lon, f.lat, f.lon);
+    else hNow = hPrev;
+    smp.heading = hNow;
+    if(hPrev!==null && hNow!==null){
+      var dh = ((hNow - hPrev + 540) % 360) - 180; // degrees, wrapped
+      var omega = toRad(dh)/dt;                     // rad/s
+      smp.latG = spd * omega / 9.81;
+    }
+    if(smp.alt!==null && prev.alt!==null){
+      var da = smp.alt - prev.alt;
+      if(Math.abs(da) < 50){ // filter GPS altitude jumps
+        smp.vspeed = da/dt;
+        if(da > 0) S.elevGain += da; else S.elevLoss += -da;
+      }
+    }
+    if(smp.speed > S.maxSpeed){ S.maxSpeed = smp.speed; S.maxSpeedAt = now; S.maxSpeedDist = smp.dist; }
+    if(smp.accel > S.maxAccel) S.maxAccel = smp.accel;
+    if(smp.accel < S.maxDecel) S.maxDecel = smp.accel;
+    detectEvents(prev, smp, dt);
+    detectZ60(prev, smp);
+    detectStops(prev, smp, dt);
+  } else {
+    smp.speed = (f.speed!==null && f.speed!==undefined && f.speed>=0 && f.speed<90) ? f.speed : 0;
+    smp.heading = (f.heading!==null && f.heading!==undefined && !isNaN(f.heading)) ? f.heading : null;
+    if(smp.speed > S.maxSpeed){ S.maxSpeed = smp.speed; S.maxSpeedAt = now; S.maxSpeedDist = 0; }
+  }
+  S.samples.push(smp);
+  if(S.samples.length > 4000) S.samples.splice(0, S.samples.length-4000);
+}
+
+function detectEvents(prev, smp, dt){
+  // braking events: accel < -1.2 m/s^2 to start, > -0.3 to end
+  if(!S.brakeActive && smp.accel < -1.2){
+    S.brakeActive = { t0:smp.t, from:prev.speed, peak:smp.accel };
+  } else if(S.brakeActive){
+    if(smp.accel < S.brakeActive.peak) S.brakeActive.peak = smp.accel;
+    if(smp.accel > -0.3 || smp.speed < 0.3){
+      S.brakeEvents.unshift({ t0:S.brakeActive.t0, t1:smp.t, from:S.brakeActive.from,
+        to:smp.speed, peakG:(-S.brakeActive.peak)/9.81 });
+      if(S.brakeEvents.length > 20) S.brakeEvents.length = 20;
+      S.brakeActive = null;
+    }
+  }
+  // acceleration events: accel > 1.2 m/s^2 to start, < 0.3 to end
+  if(!S.accelActive && smp.accel > 1.2){
+    S.accelActive = { t0:smp.t, from:prev.speed, peak:smp.accel };
+  } else if(S.accelActive){
+    if(smp.accel > S.accelActive.peak) S.accelActive.peak = smp.accel;
+    if(smp.accel < 0.3){
+      S.accelEvents.unshift({ t0:S.accelActive.t0, t1:smp.t, from:S.accelActive.from,
+        to:smp.speed, peakG:S.accelActive.peak/9.81 });
+      if(S.accelEvents.length > 20) S.accelEvents.length = 20;
+      S.accelActive = null;
+    }
+  }
+}
+
+function detectZ60(prev, smp){
+  var SIXTY = 26.8224; // 60 mph in m/s
+  if(!S.z60Armed && prev.speed < 1 && smp.speed >= 1){
+    S.z60Armed = true; S.z60Start = prev.t;
+  }
+  if(S.z60Armed && smp.speed >= SIXTY){
+    var secs = (smp.t - S.z60Start)/1000;
+    if(secs > 1 && secs < 120){
+      S.z60Last = secs;
+      if(S.z60Best===null || secs < S.z60Best) S.z60Best = secs;
+    }
+    S.z60Armed = false;
+  }
+  if(S.z60Armed && smp.speed < 0.5) S.z60Armed = false; // aborted launch
+}
+
+function detectStops(prev, smp, dt){
+  if(!S.stopActive && smp.speed < 0.5){
+    S.stopActive = { t0:smp.t };
+  } else if(S.stopActive && smp.speed >= 0.5){
+    var dur = (smp.t - S.stopActive.t0)/1000;
+    if(dur >= 4){
+      S.stops.unshift({ t0:S.stopActive.t0, t1:smp.t, dur:dur });
+      if(S.stops.length > 20) S.stops.length = 20;
+    }
+    S.stopActive = null;
+  }
+}
+
+/* ================= GPS ================= */
+function startGPS(){
+  if(!('geolocation' in navigator)){
+    showBanner('<b>Geolocation is not available</b> in this browser. Use the Simulator to preview every visualization.');
+    return;
+  }
+  stopSim();
+  S.mode = 'gps'; S.running = true; S.paused = false;
+  updateButtons();
+  try{
+    S.watchId = navigator.geolocation.watchPosition(
+      function(pos){
+        var c = pos.coords;
+        ingestFix({ t:pos.timestamp || Date.now(), lat:c.latitude, lon:c.longitude,
+          alt:(c.altitude===null||c.altitude===undefined)?null:c.altitude,
+          speed:(c.speed===null||c.speed===undefined)?null:c.speed,
+          heading:(c.heading===null||c.heading===undefined)?null:c.heading,
+          acc:(c.accuracy===null||c.accuracy===undefined)?null:c.accuracy });
+        hideBanner();
+      },
+      function(err){
+        var msg = 'GPS error: ' + (err && err.message ? err.message : 'unknown');
+        if(err && err.code === 1) msg = '<b>Location permission was denied.</b> Allow location for this page in the browser, or use the Simulator to preview every visualization.';
+        if(err && err.code === 3) msg = '<b>GPS timed out.</b> The Tesla browser can be slow to get a first fix — keep waiting, or use the Simulator.';
+        showBanner(msg);
+      },
+      { enableHighAccuracy:true, maximumAge:0, timeout:30000 }
+    );
+  }catch(e){
+    showBanner('<b>Could not start GPS:</b> ' + esc(e.message) + ' Use the Simulator instead.');
+  }
+}
+function stopGPS(){
+  if(S.watchId!==null){
+    try{ navigator.geolocation.clearWatch(S.watchId); }catch(e){}
+    S.watchId = null;
+  }
+}
+function showBanner(html){ var b=$('gpsMsg'); b.innerHTML = html; b.classList.add('show'); }
+function hideBanner(){ $('gpsMsg').classList.remove('show'); }
+
+/* ================= simulator ================= */
+function startSim(){
+  stopGPS();
+  S.mode = 'sim'; S.running = true; S.paused = false;
+  updateButtons();
+  var home = S.lastFix ? { lat:S.lastFix.lat, lon:S.lastFix.lon } : { lat:32.7357, lon:-97.1081 };
+  S.sim = { lat:home.lat, lon:home.lon, heading:42, speed:0, alt:190,
+    phase:'stop', phaseT:0, target:0, dist:0, cruiseLen:0 };
+  S.sim.timer = setInterval(simTick, 1000);
+  hideBanner();
+}
+function stopSim(){
+  if(S.sim && S.sim.timer){ clearInterval(S.sim.timer); }
+  S.sim = null;
+  if(S.mode==='sim'){ S.mode='none'; S.running=false; }
+  updateButtons();
+}
+function simTick(){
+  if(!S.sim || S.paused) return;
+  var sm = S.sim, dt = 1;
+  sm.phaseT += dt;
+  if(sm.phase==='stop'){
+    sm.speed = 0;
+    if(sm.phaseT >= 4){ sm.phase='accel'; sm.phaseT=0; sm.target = 13 + Math.random()*14; } // 29–60 mph cruise
+  } else if(sm.phase==='accel'){
+    sm.speed = Math.min(sm.target, sm.speed + 2.0 + Math.random()*0.8);
+    if(sm.speed >= sm.target - 0.2){ sm.phase='cruise'; sm.phaseT=0; sm.cruiseLen = 10 + Math.random()*14; }
+  } else if(sm.phase==='cruise'){
+    sm.speed = sm.target + Math.sin(sm.phaseT*0.5)*0.6;
+    if(Math.random() < 0.06){ sm.heading = (sm.heading + (Math.random()<0.5?-1:1)*(25+Math.random()*55)) % 360; }
+    if(sm.phaseT >= sm.cruiseLen){
+      if(Math.random() < 0.45){ sm.phase='stop'; sm.phaseT=0; sm.target=0; }
+      else { sm.phase='accel'; sm.phaseT=0; sm.target = 8 + Math.random()*10; }
+    }
+  }
+  if(sm.phase==='stop' && sm.speed > 0){ sm.speed = Math.max(0, sm.speed - 3.2); }
+  // advance position along heading
+  var d = sm.speed * dt;
+  sm.dist += d;
+  var hRad = toRad(sm.heading);
+  sm.lat += (d * Math.cos(hRad)) / 111320;
+  sm.lon += (d * Math.sin(hRad)) / (111320 * Math.cos(toRad(sm.lat)));
+  // rolling hills: altitude profile over distance
+  sm.alt = 190 + 26*Math.sin(sm.dist/900) + 9*Math.sin(sm.dist/173 + 1.3);
+  ingestFix({ t:Date.now(), lat:sm.lat, lon:sm.lon, alt:sm.alt,
+    speed:null, heading:null, acc:4 + Math.random()*4 });
+}
+
+/* ================= device motion (honest probe) ================= */
+(function probeMotion(){
+  var seen = false;
+  function mark(){ seen = true; S.motionStatus = 'firing'; }
+  if(window.DeviceMotionEvent){
+    try{ window.addEventListener('devicemotion', mark, { passive:true }); }catch(e){}
+    setTimeout(function(){
+      if(!seen) S.motionStatus = 'supported, no events (expected in Tesla browser)';
+    }, 4000);
+  } else {
+    S.motionStatus = 'not available in this browser';
+  }
+})();
+
+/* ================= trip controls ================= */
+function resetTrip(){
+  stopSim(); stopGPS();
+  S.fixes=[]; S.samples=[]; S.tripStart=null; S.lastFix=null; S.lastFixTime=0;
+  S.tripDist=0; S.maxSpeed=0; S.maxSpeedAt=null; S.maxSpeedDist=0;
+  S.maxAccel=0; S.maxDecel=0; S.elevGain=0; S.elevLoss=0;
+  S.brakeEvents=[]; S.accelEvents=[]; S.stops=[];
+  S.brakeActive=null; S.accelActive=null; S.stopActive=null;
+  S.z60Armed=false; S.z60Start=0; S.z60Last=null; S.z60Best=null;
+  S.mode='none'; S.running=false; S.paused=false;
+  updateButtons();
+}
+function exportCSV(){
+  var rows = ['t_iso,lat,lon,alt_m,speed_ms,accel_ms2,vspeed_ms,heading_deg,dist_m,g,accuracy_m'];
+  for(var i=0;i<S.samples.length;i++){
+    var s = S.samples[i];
+    rows.push([ new Date(s.t).toISOString(), s.lat.toFixed(6), s.lon.toFixed(6),
+      s.alt===null?'':s.alt.toFixed(1), s.speed.toFixed(2), s.accel.toFixed(3),
+      s.vspeed===null?'':s.vspeed.toFixed(2),
+      s.heading===null?'':s.heading.toFixed(1), s.dist.toFixed(1),
+      s.g.toFixed(3), s.acc===null?'':s.acc.toFixed(0) ].join(','));
+  }
+  var blob = new Blob([rows.join('\n')], { type:'text/csv' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'tesla-telemetry-trip.csv';
+  document.body.appendChild(a); a.click();
+  setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(a.href); }, 500);
+}
+function updateButtons(){
+  $('btnStart').disabled = S.running;
+  $('btnPause').disabled = !S.running;
+  $('btnPause').textContent = S.paused ? 'Resume' : 'Pause';
+  $('btnSim').textContent = S.mode==='sim' ? 'Simulator: On' : 'Simulator: Off';
+  $('btnSim').classList.toggle('on', S.mode==='sim');
+  var b = $('srcBadge'), t = $('srcBadgeText');
+  b.classList.remove('live','sim','none');
+  if(S.mode==='gps'){ b.classList.add('live'); t.textContent = 'LIVE GPS'; }
+  else if(S.mode==='sim'){ b.classList.add('sim'); t.textContent = 'SIMULATOR'; }
+  else { b.classList.add('none'); t.textContent = 'NO SIGNAL'; }
+}
+
+/* ================= canvas helpers ================= */
+function ctx2d(c){
+  var dpr = window.devicePixelRatio || 1;
+  var w = c.clientWidth, h = c.clientHeight;
+  if(!w || !h) return null;
+  if(c.width !== Math.round(w*dpr) || c.height !== Math.round(h*dpr)){
+    c.width = Math.round(w*dpr); c.height = Math.round(h*dpr);
+  }
+  var ctx = c.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,w,h);
+  return { ctx:ctx, w:w, h:h };
+}
+function noData(c, msg){
+  var g = ctx2d(c); if(!g) return;
+  g.ctx.fillStyle = '#5b6b7d'; g.ctx.font = '14px sans-serif';
+  g.ctx.textAlign = 'center'; g.ctx.textBaseline = 'middle';
+  g.ctx.fillText(msg || 'No data yet — start GPS or the Simulator', g.w/2, g.h/2);
+}
+function niceTicks(min, max, n){
+  if(min===max){ min-=1; max+=1; }
+  var span = max-min, step = span/n, mag = Math.pow(10, Math.floor(Math.log10(step)));
+  var norm = step/mag;
+  var s = norm < 1.5 ? 1 : (norm < 3.5 ? 2 : (norm < 7.5 ? 5 : 10));
+  step = s*mag;
+  var lo = Math.floor(min/step)*step, out = [];
+  for(var v=lo; v<=max+step*0.5; v+=step) out.push(v);
+  return out;
+}
+
+/* ================= gauges ================= */
+function drawArcGauge(c, value, min, max, color, label){
+  var g = ctx2d(c); if(!g) return;
+  var ctx = g.ctx, w = g.w, h = g.h;
+  var cx = w/2, cy = h*0.62, r = Math.min(w/2-14, h*0.52);
+  var a0 = Math.PI*0.75, a1 = Math.PI*2.25; // 270 degree sweep
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.arc(cx, cy, r, a0, a1);
+  ctx.strokeStyle = 'rgba(148,163,184,.18)'; ctx.lineWidth = 10; ctx.stroke();
+  var frac = clamp((value-min)/(max-min), 0, 1);
+  if(frac > 0){
+    ctx.beginPath(); ctx.arc(cx, cy, r, a0, a0 + frac*(a1-a0));
+    ctx.strokeStyle = color; ctx.lineWidth = 10;
+    ctx.shadowColor = color; ctx.shadowBlur = 12; ctx.stroke(); ctx.shadowBlur = 0;
+  }
+  ctx.fillStyle = '#8b98a9'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+  var ticks = niceTicks(min, max, 6);
+  for(var i=0;i<ticks.length;i++){
+    var a = a0 + ((ticks[i]-min)/(max-min))*(a1-a0);
+    var x1 = cx + Math.cos(a)*(r-16), y1 = cy + Math.sin(a)*(r-16);
+    var x2 = cx + Math.cos(a)*(r-24), y2 = cy + Math.sin(a)*(r-24);
+    ctx.strokeStyle = 'rgba(148,163,184,.5)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+    var lx = cx + Math.cos(a)*(r-36), ly = cy + Math.sin(a)*(r-36);
+    ctx.fillText(String(ticks[i]), lx, ly+4);
+  }
+  var na = a0 + frac*(a1-a0);
+  ctx.beginPath(); ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + Math.cos(na)*(r-6), cy + Math.sin(na)*(r-6));
+  ctx.strokeStyle = '#e6edf3'; ctx.lineWidth = 3; ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI*2);
+  ctx.fillStyle = '#e6edf3'; ctx.fill();
+  ctx.fillStyle = '#8b98a9'; ctx.font = '12px sans-serif';
+  ctx.fillText(label, cx, cy + r*0.42);
+}
+function drawCompass(c, heading){
+  var g = ctx2d(c); if(!g) return;
+  var ctx = g.ctx, w = g.w, h = g.h;
+  var cx = w/2, cy = h/2, r = Math.min(w,h)/2 - 16;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2);
+  ctx.strokeStyle = 'rgba(148,163,184,.25)'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = '#8b98a9'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  var card = ['N','E','S','W'];
+  for(var i=0;i<4;i++){
+    var a = -Math.PI/2 + i*Math.PI/2;
+    ctx.fillStyle = i===0 ? '#fb7185' : '#8b98a9';
+    ctx.fillText(card[i], cx + Math.cos(a)*(r-14), cy + Math.sin(a)*(r-14));
+  }
+  ctx.strokeStyle = 'rgba(148,163,184,.35)'; ctx.lineWidth = 1;
+  for(var d=0; d<360; d+=15){
+    var a = toRad(d-90);
+    var r1 = r-26, r2 = r-32;
+    ctx.beginPath();
+    ctx.moveTo(cx+Math.cos(a)*r1, cy+Math.sin(a)*r1);
+    ctx.lineTo(cx+Math.cos(a)*r2, cy+Math.sin(a)*r2);
+    ctx.stroke();
+  }
+  if(heading!==null && heading!==undefined && !isNaN(heading)){
+    var na = toRad(heading-90);
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(na+2.6)*(r-44), cy + Math.sin(na+2.6)*(r-44));
+    ctx.lineTo(cx + Math.cos(na)*(r-6), cy + Math.sin(na)*(r-6));
+    ctx.lineTo(cx + Math.cos(na-2.6)*(r-44), cy + Math.sin(na-2.6)*(r-44));
+    ctx.closePath();
+    ctx.fillStyle = '#fb7185'; ctx.shadowColor = '#fb7185'; ctx.shadowBlur = 10; ctx.fill(); ctx.shadowBlur = 0;
+    ctx.beginPath(); ctx.arc(cx, cy, 5, 0, Math.PI*2);
+    ctx.fillStyle = '#e6edf3'; ctx.fill();
+  } else {
+    ctx.fillStyle = '#5b6b7d'; ctx.font = '13px sans-serif';
+    ctx.fillText('no heading yet', cx, cy);
+  }
+}
+
+/* ================= series accessors (raw SI; formatting applied at draw time) ================= */
+function seriesVals(key){
+  var out = [];
+  var cumG = 0, cumL = 0, prevAlt = null;
+  for(var i=0;i<S.samples.length;i++){
+    var s = S.samples[i], v = null;
+    if(key==='speed') v = s.speed;
+    else if(key==='alt') v = s.alt;
+    else if(key==='accel') v = s.accel;
+    else if(key==='vspeed') v = s.vspeed;
+    else if(key==='dist') v = s.dist;
+    else if(key==='heading') v = s.heading;
+    else if(key==='acc') v = s.acc;
+    else if(key==='g') v = s.g;
+    else if(key==='latG') v = s.latG;
+    else if(key==='elevGain'){ if(s.alt!==null && prevAlt!==null){ var dg = s.alt-prevAlt; if(Math.abs(dg)<50 && dg>0) cumG += dg; } v = cumG; }
+    else if(key==='elevLoss'){ if(s.alt!==null && prevAlt!==null){ var dl = s.alt-prevAlt; if(Math.abs(dl)<50 && dl<0) cumL += -dl; } v = cumL; }
+    if(key==='alt' || key==='elevGain' || key==='elevLoss') prevAlt = s.alt;
+    out.push(v);
+  }
+  return out;
+}
+function seriesDisplay(key, v){ // convert SI value to display units
+  if(v===null||v===undefined||isNaN(v)) return null;
+  if(key==='speed') return speedVal(v);
+  if(key==='alt' || key==='elevGain' || key==='elevLoss') return altVal(v);
+  if(key==='dist') return distVal(v);
+  if(key==='accel') return v;
+  if(key==='vspeed') return vspeedVal(v);
+  return v;
+}
+function seriesUnit(key){
+  if(key==='speed') return speedUnit();
+  if(key==='alt' || key==='elevGain' || key==='elevLoss') return altUnit();
+  if(key==='dist') return distUnit();
+  if(key==='accel') return 'm/s²';
+  if(key==='vspeed') return vspeedUnit();
+  if(key==='heading') return '°';
+  if(key==='acc') return 'm';
+  if(key==='g' || key==='latG') return 'g';
+  return '';
+}
+function seriesLabel(key){
+  var m = { speed:'Speed', alt:'Altitude', accel:'Acceleration', vspeed:'Vertical speed',
+    dist:'Distance', heading:'Heading', acc:'GPS accuracy', g:'G-force', latG:'Lateral g',
+    elevGain:'Elevation gain', elevLoss:'Elevation loss' };
+  return m[key] || key;
+}
+function seriesColor(key){
+  var m = { speed:'#2dd4bf', alt:'#fbbf24', accel:'#fb7185', vspeed:'#38bdf8',
+    dist:'#4ade80', heading:'#a78bfa', acc:'#f87171', g:'#fb7185', latG:'#38bdf8',
+    elevGain:'#4ade80', elevLoss:'#fb7185' };
+  return m[key] || '#2dd4bf';
+}
+
+/* ================= overlay system ================= */
+var OVERLAYS = {
+  speed: [
+    { key:'alt', tip:'Speed + altitude: see how hills bleed speed on climbs and hand it back on descents — the dips in speed should line up with the rises in altitude.' },
+    { key:'accel', tip:'Speed + acceleration: spot where the car is still pulling hard versus coasting at steady speed — acceleration near zero while speed is flat means you are cruising, not pushing.' },
+    { key:'heading', tip:'Speed + heading: find the corners — speed dips line up with heading swings, so you can see exactly how much each turn cost you.' },
+    { key:'vspeed', tip:'Speed + vertical speed: climbing costs speed and descending returns it. Where vertical speed stays positive while speed falls, the hill is doing the braking.' }
+  ],
+  alt: [
+    { key:'speed', tip:'Altitude + speed: the classic hill test — if speed holds steady while altitude climbs, the car is working hard; if it sags, the grade won.' },
+    { key:'vspeed', tip:'Altitude + vertical speed: vertical speed is the slope of the altitude line. Where it flattens to zero, you have reached a plateau or a valley floor.' },
+    { key:'dist', tip:'Altitude + distance: this turns the profile into the road itself — altitude against miles travelled shows the true shape of the terrain, not just when it happened.' },
+    { key:'accel', tip:'Altitude + acceleration: on a climb, acceleration should stay slightly positive just to hold speed. If it goes negative on a rise, you are losing the battle with gravity.' }
+  ],
+  accel: [
+    { key:'speed', tip:'Acceleration + speed: hard acceleration lives at low speed and fades as speed rises — that taper is the car\'s power curve in plain sight.' },
+    { key:'heading', tip:'Acceleration + heading: braking before a turn shows up as a negative spike right where heading starts to swing — a clean driver brakes in a straight line, then turns.' },
+    { key:'dist', tip:'Acceleration + distance: pin each hard launch or brake to a place on the trip — the on-ramp, the school zone, the downhill stretch.' },
+    { key:'vspeed', tip:'Acceleration + vertical speed: on descents, gravity adds acceleration for free, so a positive reading downhill may not be throttle at all — it is the hill pushing.' }
+  ],
+  vspeed: [
+    { key:'alt', tip:'Vertical speed + altitude: the rate of climb against the height itself. Big vertical speed at low altitude is a valley wall; the same rate near the top is the final push to a crest.' },
+    { key:'speed', tip:'Vertical speed + speed: the energy trade-off — when vertical speed goes positive and speed falls, kinetic energy is becoming height. When it flips, the hill is paying you back.' },
+    { key:'accel', tip:'Vertical speed + acceleration: a steady climb should show near-zero acceleration (constant effort). Spikes here mean the grade itself is changing under you.' },
+    { key:'dist', tip:'Vertical speed + distance: see exactly where along the route the steep grades live, so the worst climbs are measured in miles, not minutes.' }
+  ],
+  dist: [
+    { key:'speed', tip:'Distance + speed: the slope of the distance line is speed, so overlaying speed turns this into a self-check — where the two disagree, a fix was noisy.' },
+    { key:'alt', tip:'Distance + altitude: the road profile against miles travelled. Flat stretches at low altitude are valley floors; the climbs are where the distance accumulates slowly.' },
+    { key:'heading', tip:'Distance + heading: long straight runs show as flat heading against steadily growing distance; every turn is a step in heading at a specific mile marker.' },
+    { key:'accel', tip:'Distance + acceleration: hard braking and launching pinned to distance — useful for finding the exact spot of a rough stretch or a favourite on-ramp.' }
+  ],
+  heading: [
+    { key:'speed', tip:'Heading + speed: turns should happen at lower speed. If heading swings while speed stays high, that was a fast sweeper; if speed collapses first, it was a sharp corner.' },
+    { key:'dist', tip:'Heading + distance: a route map in one dimension — each bend in the road is a heading change at a known distance from the start.' },
+    { key:'accel', tip:'Heading + acceleration: the braking-then-turning pattern. A good line brakes before the heading changes; braking during the swing means the corner caught you out.' },
+    { key:'alt', tip:'Heading + altitude: winding roads often follow contours, so heading swings that repeat at the same altitude are switchbacks climbing a slope.' }
+  ],
+  elevDist: [
+    { key:'speed', tip:'Elevation + speed: the steepest climbs are where speed sags most. Overlaying speed shows the true cost of each hill in miles per hour, not just feet.' },
+    { key:'vspeed', tip:'Elevation + vertical speed: vertical speed is the grade — where it peaks, the road is steepest. Compare it with the elevation line to find the hardest single stretch.' },
+    { key:'accel', tip:'Elevation + acceleration: holding speed uphill needs constant positive acceleration. If acceleration goes negative on a climb, you are slowing — the hill is winning.' },
+    { key:'heading', tip:'Elevation + heading: switchbacks show up as heading swings at the same climbing elevation — the road zig-zags because it cannot go straight up.' }
+  ],
+  elevCum: [
+    { key:'alt', tip:'Cumulative gain + altitude: gain should grow whenever altitude grows and pause on the flat. If gain grows while altitude is flat, the altitude data is noisy, not the road.' },
+    { key:'speed', tip:'Cumulative gain + speed: climbing is slow work — the gain line steepens exactly where speed is lowest, and flattens on the descents where speed recovers.' },
+    { key:'dist', tip:'Cumulative gain + distance: total climbing per mile is the honest measure of a hilly route. A steep gain-per-mile early on means the hard part came first.' },
+    { key:'vspeed', tip:'Cumulative gain + vertical speed: vertical speed is the moment-by-moment climb rate; the cumulative line is its running total. Spikes in one should bend the other.' }
+  ],
+  acc: [
+    { key:'speed', tip:'Accuracy + speed: at higher speeds a bad fix matters more — a 30 m error at 60 mph is a bigger problem than at a standstill, and this overlay shows where they coincided.' },
+    { key:'dist', tip:'Accuracy + distance: pin the poor fixes to places — garages, tunnels, tree cover and tall buildings all leave their mark on this line at specific mile markers.' },
+    { key:'heading', tip:'Accuracy + heading: when accuracy is poor, heading is the first thing to lie. Heading swings that line up with accuracy spikes are GPS noise, not turns.' },
+    { key:'alt', tip:'Accuracy + altitude: altitude is the weakest GPS measurement, so its wildest swings usually sit right on top of the worst accuracy — a useful cross-check before trusting a climb.' }
+  ]
+};
+var CHART_DEFAULT_TIP = {};
+function cap(s){ return s.charAt(0).toUpperCase() + s.slice(1); }
+
+/* ================= chart types, state, overlays ================= */
+var CHART_TYPES = [
+  { id:'line', label:'Line' }, { id:'needle', label:'Needle' }, { id:'rpm', label:'RPM' },
+  { id:'area', label:'Area' }, { id:'bar', label:'Bar' }, { id:'scatter', label:'Scatter' },
+  { id:'step', label:'Step' }, { id:'heat', label:'Heat strip' }, { id:'ribbon', label:'Ribbon' },
+  { id:'polar', label:'Polar' }, { id:'histogram', label:'Histogram' },
+  { id:'xy', label:'X-vs-Y scatter' }, { id:'sparkline', label:'Sparkline' }
+];
+var TIME_TYPES = ['line','area','bar','scatter','step','heat','ribbon'];
+var TYPE_NO_OVERLAY_NOTE = {
+  needle:'Needle is a dial for the current value — overlays need a time axis, so they are off here.',
+  rpm:'RPM is a dial for the current value — overlays need a time axis, so they are off here.',
+  polar:'Polar shows how the metric is distributed by heading, not over time — overlays do not apply.',
+  histogram:'A histogram shows the distribution of values, not time — overlays do not apply.',
+  xy:'X-vs-Y already compares two metrics — that comparison is its overlay.',
+  sparkline:'Sparklines are too compact for overlays — switch to Line to layer metrics.'
+};
+var CHARTS = {
+  speed:    { canvas:'chSpeed',    primary:'speed',    xMode:'t' },
+  alt:      { canvas:'chAlt',      primary:'alt',      xMode:'t' },
+  accel:    { canvas:'chAccel',    primary:'accel',    xMode:'t' },
+  dist:     { canvas:'chDist',     primary:'dist',     xMode:'t' },
+  vspeed:   { canvas:'chVspeed',   primary:'vspeed',   xMode:'t' },
+  heading:  { canvas:'chHeading',  primary:'heading',  xMode:'t' },
+  elevDist: { canvas:'chElevDist', primary:'alt',      xMode:'dist' },
+  elevCum:  { canvas:'chElevCum',  primary:'elevGain', xMode:'t' },
+  acc:      { canvas:'chAcc',      primary:'acc',      xMode:'t' }
+};
+var CHIP_KEYS = ['speed','alt','vspeed','accel','dist','heading','g','acc'];
+var chartState = {};
+(function initChartState(){
+  for(var k in CHARTS){
+    chartState[k] = { type:'line', overlays:[], xyKey:(k==='speed' ? 'alt' : 'speed') };
+  }
+  chartState.elevCum.overlays = ['elevLoss'];
+})();
+function chipKeysFor(chart){
+  var cfg = CHARTS[chart], out = [];
+  for(var i=0;i<CHIP_KEYS.length;i++){
+    var k = CHIP_KEYS[i];
+    if(k===cfg.primary) continue;
+    if(chart==='elevDist' && k==='dist') continue; // distance is the x-axis here
+    out.push(k);
+  }
+  if(chart==='elevCum') out.push('elevLoss');
+  return out;
+}
+/* pair tips: keyed by alphabetically sorted pair "a+b" */
+var PAIR_TIPS = {
+  'acc+accel':'Acceleration spikes that line up with accuracy spikes are GPS jumps, not launches — the car cannot gain 20 mph in one fix.',
+  'acc+alt':'Altitude is the weakest GPS measurement: its wildest swings usually sit on top of the worst accuracy — cross-check before trusting a climb.',
+  'acc+dist':'Poor fixes pinned to places — garages, tunnels, tree cover and tall buildings each leave their mark at specific mile markers.',
+  'acc+g':'G-force spikes that coincide with bad accuracy are usually GPS jumps — a real maneuver shows clean accuracy alongside the g.',
+  'acc+heading':'When accuracy is poor, heading is the first thing to lie — heading swings on top of accuracy spikes are GPS noise, not turns.',
+  'acc+speed':'Where accuracy is poor, speed is the first number to lie — speed jumps that line up with accuracy spikes are GPS noise, not driving.',
+  'acc+vspeed':'When accuracy is poor, vertical speed is the first to lie — rapid flips between climbing and sinking are noise, not the road.',
+  'accel+alt':'Holding speed uphill needs steady positive acceleration; if acceleration goes negative on a rise, the hill is winning.',
+  'accel+dist':'Hard launches and braking pinned to distance — the on-ramp, the school zone, the rough stretch, each at its own mile marker.',
+  'accel+g':'G-force is acceleration in units you can feel — the two track together, and any gap between them is the cornering component.',
+  'accel+heading':'The braking-then-turning pattern: a clean driver brakes in a straight line before the heading changes; braking during the swing means the corner caught you out.',
+  'accel+speed':'Acceleration is the slope of speed: where acceleration is near zero and speed is flat, you are cruising; where it spikes, you are launching or braking.',
+  'accel+vspeed':'A steady climb shows near-zero acceleration (constant effort); spikes here mean the grade itself is changing under you.',
+  'alt+dist':'Altitude against distance is the road itself — the true shape of the terrain, measured in miles rather than minutes.',
+  'alt+g':'G-force on a climb is mostly the grade pulling back; on a descent it is gravity pushing — compare with flat stretches to separate the two.',
+  'alt+heading':'Winding roads follow contours: heading swings that repeat at the same altitude are switchbacks climbing a slope.',
+  'alt+speed':'Hills: speed sags on climbs and recovers on descents — where the two move in opposite directions, the grade is doing the work.',
+  'alt+vspeed':'Vertical speed is the slope of altitude: where it flattens to zero you have reached a plateau or valley floor.',
+  'dist+g':'Hard maneuvers pinned to place — the g spikes show where the drive got physical, and distance tells you where that was.',
+  'dist+heading':'A route map in one dimension: each bend is a heading change at a known distance from the start.',
+  'dist+speed':'Distance grows fastest where speed is highest — the gaps between distance markers show which stretches of road were quick and which were slow.',
+  'dist+vspeed':'Steep grades pinned to distance — the worst climbs measured in miles, so you know exactly where the road bites.',
+  'g+heading':'Lateral g lives in the corners: heading swings with high g are fast sweepers; swings with low g are gentle bends.',
+  'g+speed':'G-force spikes at high speed are the hard maneuvers — braking or cornering loads that stand out from gentle cruising.',
+  'g+vspeed':'Vertical speed with g-force separates throttle from gravity: positive g on a climb is effort, positive g on a descent is the hill pushing.',
+  'heading+speed':'Corners cost speed: heading swings line up with speed dips, so you can see exactly how much each turn took.',
+  'heading+vspeed':'Grades and bends together: heading swings during a climb are switchbacks; on a descent they are the road unwinding downhill.',
+  'speed+vspeed':'Climbing trades speed for height; descending pays it back — when vertical speed rises and speed falls, you are spending kinetic energy on altitude.',
+  'elevGain+acc':'Gain totals are only as good as altitude fixes — where accuracy is poor, the gain line may grow from noise, not hills.',
+  'elevGain+accel':'Climbing is slow work — the gain line steepens exactly where acceleration is lowest, and flattens where speed recovers.',
+  'elevGain+alt':'Gain should grow whenever altitude grows and pause on the flat — if gain grows while altitude is flat, the altitude data is noisy.',
+  'elevGain+dist':'Total climbing per mile is the honest measure of a hilly route.',
+  'elevGain+elevLoss':'The two running totals together: on a loop drive they should nearly match — a big gap means the trip ended much higher or lower than it started.',
+  'elevGain+g':'Climbing loads the car: g-force on the gain line shows the effort of each ascent.',
+  'elevGain+heading':'Switchbacks show up as heading swings while the gain line climbs — the road zig-zags because it cannot go straight up.',
+  'elevGain+speed':'Climbing is slow work — the gain line steepens exactly where speed is lowest, and flattens on the descents where speed recovers.',
+  'elevGain+vspeed':'Vertical speed is the moment-by-moment climb rate; the cumulative line is its running total.'
+};
+var TRIO_CLAUSE = {
+  speed:'Adding speed shows how fast all of this was happening.',
+  alt:'Adding altitude shows whether the terrain was behind it.',
+  vspeed:'Adding vertical speed shows whether a grade was involved.',
+  accel:'Adding acceleration shows whether you powered through it or coasted.',
+  dist:'Adding distance pins it to a place on the trip.',
+  heading:'Adding heading shows whether a turn was part of it.',
+  g:'Adding g-force shows how hard it felt in the seat.',
+  acc:'Adding accuracy shows which parts to trust and which were GPS noise.',
+  elevLoss:'Adding elevation loss shows the descents that balanced the climbs.'
+};
+function pairKey(a,b){ return a<b ? a+'+'+b : b+'+'+a; }
+function updateTip(chart){
+  var tipEl = $('tip' + cap(chart));
+  if(!tipEl) return;
+  var st = chartState[chart], cfg = CHARTS[chart];
+  var ov = st.overlays;
+  if(ov.length===0){ tipEl.textContent = CHART_DEFAULT_TIP[chart] || ''; return; }
+  if(ov.length===1){
+    var list = OVERLAYS[chart] || [];
+    for(var i=0;i<list.length;i++){
+      if(list[i].key===ov[0]){ tipEl.textContent = list[i].tip; return; }
+    }
+    tipEl.textContent = PAIR_TIPS[pairKey(cfg.primary, ov[0])] || CHART_DEFAULT_TIP[chart];
+    return;
+  }
+  var tip = PAIR_TIPS[pairKey(cfg.primary, ov[0])] || CHART_DEFAULT_TIP[chart];
+  for(var j=1;j<ov.length;j++){
+    if(TRIO_CLAUSE[ov[j]]) tip += ' ' + TRIO_CLAUSE[ov[j]];
+  }
+  tipEl.textContent = tip;
+}
+function buildChips(chart){
+  var wrap = $('ovChips' + cap(chart));
+  if(!wrap) return;
+  wrap.innerHTML = '';
+  var keys = chipKeysFor(chart);
+  for(var i=0;i<keys.length;i++){
+    (function(k){
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'chip' + (chartState[chart].overlays.indexOf(k) !== -1 ? ' on' : '');
+      b.textContent = seriesLabel(k);
+      b.setAttribute('data-key', k);
+      b.addEventListener('click', function(){
+        var ov = chartState[chart].overlays;
+        var ix = ov.indexOf(k);
+        if(ix !== -1){ ov.splice(ix, 1); b.classList.toggle('on', false); }
+        else if(ov.length < 3){ ov.push(k); b.classList.toggle('on', true); }
+        else { return; }
+        updateTip(chart);
+      });
+      wrap.appendChild(b);
+    })(keys[i]);
+  }
+}
+function syncChartControls(chart){
+  var st = chartState[chart];
+  var chips = $('ovChips' + cap(chart));
+  var note = $('ovNote' + cap(chart));
+  var xyWrap = $('xyWrap' + cap(chart));
+  var timeBased = TIME_TYPES.indexOf(st.type) !== -1;
+  if(chips) chips.style.display = timeBased ? '' : 'none';
+  if(note) note.textContent = timeBased ? '' : (TYPE_NO_OVERLAY_NOTE[st.type] || '');
+  if(xyWrap) xyWrap.style.display = (st.type === 'xy') ? '' : 'none';
+}
+function initChartControls(){
+  for(var chart in CHARTS){
+    (function(chart){
+      var st = chartState[chart];
+      var tipEl = $('tip' + cap(chart));
+      if(tipEl) CHART_DEFAULT_TIP[chart] = tipEl.textContent;
+      var vt = $('vt' + cap(chart));
+      if(vt){
+        var html = '';
+        for(var i=0;i<CHART_TYPES.length;i++){
+          html += '<option value="'+CHART_TYPES[i].id+'">'+CHART_TYPES[i].label+'</option>';
+        }
+        vt.innerHTML = html;
+        vt.value = st.type;
+        vt.addEventListener('change', function(){
+          st.type = vt.value;
+          syncChartControls(chart);
+          updateTip(chart);
+        });
+      }
+      var xy = $('xy' + cap(chart));
+      if(xy){
+        var keys = chipKeysFor(chart);
+        var xh = '';
+        for(var j=0;j<keys.length;j++){
+          xh += '<option value="'+keys[j]+'">'+seriesLabel(keys[j])+'</option>';
+        }
+        xy.innerHTML = xh;
+        xy.value = st.xyKey;
+        xy.addEventListener('change', function(){ st.xyKey = xy.value; });
+      }
+      buildChips(chart);
+      syncChartControls(chart);
+      updateTip(chart);
+    })(chart);
+  }
+}
+function setLegend(chart, overlayKeys){
+  var leg = $('leg' + cap(chart));
+  if(!leg) return;
+  var cfg = CHARTS[chart];
+  var html = '';
+  var pr = rangeFor(seriesVals(cfg.primary), cfg.primary);
+  if(pr) html += '<span><i style="background:'+seriesColor(cfg.primary)+'"></i>'+seriesLabel(cfg.primary)+' '+fmt(pr.min,1)+' – '+fmt(pr.max,1)+' '+seriesUnit(cfg.primary)+'</span>';
+  for(var i=0;i<overlayKeys.length;i++){
+    var k = overlayKeys[i];
+    var orr = rangeFor(seriesVals(k), k);
+    if(orr) html += '<span><i style="background:'+seriesColor(k)+'"></i>'+seriesLabel(k)+' '+fmt(orr.min,1)+' – '+fmt(orr.max,1)+' '+seriesUnit(k)+'</span>';
+  }
+  leg.innerHTML = html;
+}
+
+/* ================= time-series chart ================= */
+function drawTimeChart(c, chartName, primaryKey, overlayKeys, xMode, style){
+  style = style || 'line';
+  overlayKeys = overlayKeys || [];
+  var g = ctx2d(c); if(!g) return;
+  var ctx = g.ctx, w = g.w, h = g.h;
+  var n = S.samples.length;
+  if(n < 2){ noData(c); setLegend(chartName, []); return; }
+  var t0 = S.samples[0].t;
+  var stride = Math.max(1, Math.ceil(n/600));
+  function xs(s){ return xMode==='dist' ? distVal(s.dist) : (s.t - t0)/60000; }
+  var pVals = seriesVals(primaryKey);
+  var ovs = [];
+  for(var oi=0; oi<overlayKeys.length; oi++){
+    var ok = overlayKeys[oi];
+    var orr = rangeFor(seriesVals(ok), ok);
+    if(orr) ovs.push({ key:ok, vals:seriesVals(ok), range:orr });
+  }
+  var pr = rangeFor(pVals, primaryKey);
+  if(!pr){ noData(c, 'No usable data for this chart yet'); setLegend(chartName, []); return; }
+  var spark = style==='sparkline';
+  var padL = spark ? 6 : 46, padR = (ovs.length===1 && !spark) ? 46 : 12, padT = spark ? 6 : 12, padB = spark ? 6 : 24;
+  var xMax = xMode==='dist' ? distVal(S.samples[n-1].dist) : (S.samples[n-1].t - t0)/60000;
+  if(xMax <= 0) xMax = 1;
+  function X(s){ return padL + (xs(s)/xMax)*(w-padL-padR); }
+  function Y(v, rng, dispKey){
+    var d = seriesDisplay(dispKey, v);
+    if(d===null) return null;
+    var span = rng.max - rng.min; if(span <= 0) span = 1;
+    return padT + (1 - (d - rng.min)/span)*(h-padT-padB);
+  }
+  if(!spark){
+    ctx.strokeStyle = 'rgba(148,163,184,.12)'; ctx.lineWidth = 1;
+    ctx.fillStyle = '#8b98a9'; ctx.font = '11px sans-serif';
+    var ticks = niceTicks(pr.min, pr.max, 4);
+    for(var ti=0; ti<ticks.length; ti++){
+      var y = padT + (1 - (ticks[ti]-pr.min)/Math.max(1e-9,(pr.max-pr.min)))*(h-padT-padB);
+      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w-padR, y); ctx.stroke();
+      ctx.textAlign = 'right'; ctx.fillText(String(Math.round(ticks[ti]*10)/10), padL-6, y+4);
+    }
+    if(ovs.length===1){
+      var ot = niceTicks(ovs[0].range.min, ovs[0].range.max, 4);
+      ctx.fillStyle = seriesColor(ovs[0].key);
+      for(var oi2=0; oi2<ot.length; oi2++){
+        var oy = padT + (1 - (ot[oi2]-ovs[0].range.min)/Math.max(1e-9,(ovs[0].range.max-ovs[0].range.min)))*(h-padT-padB);
+        ctx.textAlign = 'left'; ctx.fillText(String(Math.round(ot[oi2]*10)/10), w-padR+6, oy+4);
+      }
+    }
+    ctx.textAlign = 'center';
+    for(var xi=0; xi<=5; xi++){
+      var xv = xMax*xi/5;
+      var xx = padL + (xv/xMax)*(w-padL-padR);
+      ctx.fillStyle = '#8b98a9';
+      ctx.fillText(xMode==='dist' ? fmt(xv,1)+' '+distUnit() : fmt(xv,1)+' min', xx, h-8);
+    }
+  }
+  // overlays as lines (under the primary)
+  for(var o=0;o<ovs.length;o++){
+    ctx.beginPath(); var started = false;
+    for(var i=0;i<n;i+=stride){
+      var yv = Y(ovs[o].vals[i], ovs[o].range, ovs[o].key);
+      if(yv===null){ started = false; continue; }
+      var xx2 = X(S.samples[i]);
+      if(!started){ ctx.moveTo(xx2, yv); started = true; } else ctx.lineTo(xx2, yv);
+    }
+    ctx.strokeStyle = seriesColor(ovs[o].key); ctx.lineWidth = 2; ctx.stroke();
+  }
+  // primary points
+  var pts = [];
+  for(var j=0;j<n;j+=stride){
+    var y2 = Y(pVals[j], pr, primaryKey);
+    if(y2===null) continue;
+    pts.push({ x:X(S.samples[j]), y:y2, v:seriesDisplay(primaryKey, pVals[j]) });
+  }
+  if(pts.length){
+    if(style==='bar'){
+      var bw = Math.max(2, ((w-padL-padR)/Math.max(1,pts.length-1))*0.7);
+      ctx.fillStyle = hexA(seriesColor(primaryKey), 0.85);
+      for(var b=0;b<pts.length;b++){ ctx.fillRect(pts[b].x-bw/2, pts[b].y, bw, (h-padB)-pts[b].y); }
+    } else if(style==='scatter'){
+      ctx.fillStyle = seriesColor(primaryKey);
+      for(var s2=0;s2<pts.length;s2++){ ctx.beginPath(); ctx.arc(pts[s2].x, pts[s2].y, 3.5, 0, Math.PI*2); ctx.fill(); }
+    } else if(style==='step'){
+      ctx.beginPath();
+      for(var st=0;st<pts.length;st++){
+        if(st===0) ctx.moveTo(pts[st].x, pts[st].y);
+        else { ctx.lineTo(pts[st].x, pts[st-1].y); ctx.lineTo(pts[st].x, pts[st].y); }
+      }
+      ctx.strokeStyle = seriesColor(primaryKey); ctx.lineWidth = 2.5;
+      ctx.shadowColor = seriesColor(primaryKey); ctx.shadowBlur = 8; ctx.stroke(); ctx.shadowBlur = 0;
+      ctx.fillStyle = seriesColor(primaryKey);
+      for(var sm=0;sm<pts.length;sm++){ ctx.beginPath(); ctx.arc(pts[sm].x, pts[sm].y, 2.5, 0, Math.PI*2); ctx.fill(); }
+    } else if(style==='heat'){
+      for(var hh=0; hh<pts.length-1; hh++){
+        var f0 = clamp((pts[hh].v - pr.min)/Math.max(1e-9,(pr.max-pr.min)), 0, 1);
+        ctx.fillStyle = heatColor(f0);
+        ctx.fillRect(pts[hh].x, padT, Math.max(1, pts[hh+1].x - pts[hh].x), h-padT-padB);
+      }
+      ctx.beginPath();
+      for(var hl=0;hl<pts.length;hl++){ if(hl===0) ctx.moveTo(pts[hl].x, pts[hl].y); else ctx.lineTo(pts[hl].x, pts[hl].y); }
+      ctx.strokeStyle = 'rgba(230,237,243,.9)'; ctx.lineWidth = 1.5; ctx.stroke();
+    } else {
+      // line, area, sparkline
+      if(style==='area'){
+        ctx.beginPath(); ctx.moveTo(pts[0].x, h-padB);
+        for(var p=0;p<pts.length;p++) ctx.lineTo(pts[p].x, pts[p].y);
+        ctx.lineTo(pts[pts.length-1].x, h-padB); ctx.closePath();
+        ctx.fillStyle = hexA(seriesColor(primaryKey), 0.12); ctx.fill();
+      }
+      ctx.beginPath();
+      for(var q=0;q<pts.length;q++){ if(q===0) ctx.moveTo(pts[q].x, pts[q].y); else ctx.lineTo(pts[q].x, pts[q].y); }
+      ctx.strokeStyle = seriesColor(primaryKey); ctx.lineWidth = spark ? 1.5 : 2.5;
+      if(!spark){ ctx.shadowColor = seriesColor(primaryKey); ctx.shadowBlur = 8; }
+      ctx.stroke(); ctx.shadowBlur = 0;
+      if(!spark){
+        ctx.fillStyle = seriesColor(primaryKey);
+        for(var m=0;m<pts.length;m++){ ctx.beginPath(); ctx.arc(pts[m].x, pts[m].y, 2.5, 0, Math.PI*2); ctx.fill(); }
+      } else {
+        var lp = pts[pts.length-1];
+        ctx.beginPath(); ctx.arc(lp.x, lp.y, 3.5, 0, Math.PI*2); ctx.fillStyle = seriesColor(primaryKey); ctx.fill();
+      }
+    }
+  }
+  if(!spark){
+    ctx.fillStyle = seriesColor(primaryKey); ctx.textAlign = 'left'; ctx.font = '11px sans-serif';
+    ctx.fillText(seriesLabel(primaryKey)+' ('+seriesUnit(primaryKey)+')', padL, 12);
+    if(ovs.length===1){
+      ctx.fillStyle = seriesColor(ovs[0].key); ctx.textAlign = 'right';
+      ctx.fillText(seriesLabel(ovs[0].key)+' ('+seriesUnit(ovs[0].key)+')', w-padR, 12);
+    }
+  }
+  setLegend(chartName, overlayKeys);
+}
+function heatColor(f){
+  var r, g2, b, t;
+  if(f < 0.5){ t = f/0.5; r = Math.round(74 + (251-74)*t); g2 = Math.round(222 + (191-222)*t); b = Math.round(128 + (36-128)*t); }
+  else { t = (f-0.5)/0.5; r = Math.round(251 + (248-251)*t); g2 = Math.round(191 + (113-191)*t); b = Math.round(36 + (113-36)*t); }
+  return 'rgba('+r+','+g2+','+b+',0.85)';
+}
+/* ribbon: last 60 seconds of one metric, with optional overlay lines */
+function drawRibbonMetric(c, chartName, primaryKey, overlayKeys){
+  var g = ctx2d(c); if(!g) return;
+  var ctx = g.ctx, w = g.w, h = g.h;
+  var n = S.samples.length;
+  if(n < 2){ noData(c, 'Last 60 seconds will appear here once moving'); setLegend(chartName, []); return; }
+  var tEnd = S.samples[n-1].t, tStart = tEnd - 60000;
+  var idx = [];
+  for(var i=0;i<n;i++){ if(S.samples[i].t >= tStart) idx.push(i); }
+  if(idx.length < 2){ noData(c, 'Waiting for more fixes in the last 60 seconds'); setLegend(chartName, []); return; }
+  var all = seriesVals(primaryKey);
+  var mx = 0.0001;
+  for(var k=0;k<idx.length;k++){
+    var d = seriesDisplay(primaryKey, all[idx[k]]);
+    if(d!==null && d>mx) mx = d;
+  }
+  var padL=8, padR=8, padT=8, padB=18;
+  var bw = (w-padL-padR)/60;
+  for(var b=0;b<idx.length;b++){
+    var s = S.samples[idx[b]];
+    var d2 = seriesDisplay(primaryKey, all[idx[b]]);
+    if(d2===null) continue;
+    var x = padL + ((s.t - tStart)/60000)*(w-padL-padR);
+    var bh = (d2/mx)*(h-padT-padB);
+    var frac = d2/mx;
+    ctx.fillStyle = frac < 0.4 ? '#2dd4bf' : (frac < 0.75 ? '#fbbf24' : '#fb7185');
+    ctx.fillRect(x, h-padB-bh, Math.max(2, bw-1), bh);
+  }
+  for(var o=0;o<overlayKeys.length;o++){
+    var ov = seriesVals(overlayKeys[o]);
+    var orr = rangeFor(ov, overlayKeys[o]);
+    if(!orr) continue;
+    ctx.beginPath(); var started = false;
+    for(var q=0;q<idx.length;q++){
+      var d3 = seriesDisplay(overlayKeys[o], ov[idx[q]]);
+      if(d3===null){ started = false; continue; }
+      var y = padT + (1-(d3-orr.min)/Math.max(1e-9,(orr.max-orr.min)))*(h-padT-padB);
+      var xx = padL + ((S.samples[idx[q]].t - tStart)/60000)*(w-padL-padR);
+      if(!started){ ctx.moveTo(xx, y); started = true; } else ctx.lineTo(xx, y);
+    }
+    ctx.strokeStyle = seriesColor(overlayKeys[o]); ctx.lineWidth = 2; ctx.stroke();
+  }
+  ctx.fillStyle = '#8b98a9'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('60 s ago', padL+26, h-5);
+  ctx.fillText('now', w-padR-14, h-5);
+  setLegend(chartName, overlayKeys);
+}
+/* RPM dial: arc gauge with a redline zone in the top 15% */
+function drawRpmGauge(c, value, min, max, color, label){
+  var g = ctx2d(c); if(!g) return;
+  var ctx = g.ctx, w = g.w, h = g.h;
+  var cx = w/2, cy = h*0.62, r = Math.min(w/2-14, h*0.52);
+  var a0 = Math.PI*0.75, a1 = Math.PI*2.25;
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.arc(cx, cy, r, a0, a1);
+  ctx.strokeStyle = 'rgba(148,163,184,.18)'; ctx.lineWidth = 10; ctx.stroke();
+  var ra0 = a0 + 0.85*(a1-a0);
+  ctx.beginPath(); ctx.arc(cx, cy, r, ra0, a1);
+  ctx.strokeStyle = '#f87171'; ctx.lineWidth = 10; ctx.stroke();
+  var frac = clamp((value-min)/(max-min), 0, 1);
+  if(frac > 0){
+    ctx.beginPath(); ctx.arc(cx, cy, r, a0, a0 + frac*(a1-a0));
+    ctx.strokeStyle = frac >= 0.85 ? '#f87171' : color; ctx.lineWidth = 10;
+    ctx.shadowColor = ctx.strokeStyle; ctx.shadowBlur = 12; ctx.stroke(); ctx.shadowBlur = 0;
+  }
+  ctx.fillStyle = '#8b98a9'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+  var ticks = niceTicks(min, max, 6);
+  for(var i=0;i<ticks.length;i++){
+    var a = a0 + ((ticks[i]-min)/(max-min))*(a1-a0);
+    var x1 = cx + Math.cos(a)*(r-16), y1 = cy + Math.sin(a)*(r-16);
+    var x2 = cx + Math.cos(a)*(r-24), y2 = cy + Math.sin(a)*(r-24);
+    ctx.strokeStyle = 'rgba(148,163,184,.5)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+    var lx = cx + Math.cos(a)*(r-36), ly = cy + Math.sin(a)*(r-36);
+    ctx.fillText(String(ticks[i]), lx, ly+4);
+  }
+  var na = a0 + frac*(a1-a0);
+  ctx.beginPath(); ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + Math.cos(na)*(r-6), cy + Math.sin(na)*(r-6));
+  ctx.strokeStyle = '#e6edf3'; ctx.lineWidth = 3; ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI*2);
+  ctx.fillStyle = '#e6edf3'; ctx.fill();
+  ctx.fillStyle = frac >= 0.85 ? '#f87171' : '#8b98a9'; ctx.font = 'bold 12px sans-serif';
+  ctx.fillText(frac >= 0.85 ? 'REDLINE' : label, cx, cy + r*0.42);
+}
+/* polar: mean metric value per heading bin (12 x 30-degree bins) */
+function drawPolar(c, key){
+  var g = ctx2d(c); if(!g) return;
+  var ctx = g.ctx, w = g.w, h = g.h;
+  var vals = seriesVals(key);
+  if(key==='dist' || key==='elevGain' || key==='elevLoss'){
+    var inc = [];
+    for(var i=0;i<vals.length;i++){
+      inc.push(i===0 ? 0 : (vals[i]===null || vals[i-1]===null ? 0 : vals[i]-vals[i-1]));
+    }
+    vals = inc;
+  }
+  var bins = [], counts = [];
+  for(var b=0;b<12;b++){ bins.push(0); counts.push(0); }
+  var n = 0;
+  for(var i=0;i<S.samples.length;i++){
+    var s = S.samples[i];
+    if(s.heading===null||s.heading===undefined) continue;
+    var bi = Math.floor((((s.heading%360)+360)%360)/30);
+    counts[bi]++;
+    var v = seriesDisplay(key, vals[i]);
+    if(v!==null) bins[bi] += v;
+    n++;
+  }
+  if(n < 2){ noData(c, 'Polar needs heading data — drive or run the Simulator'); return; }
+  var means = [], peak = 0;
+  for(var j=0;j<12;j++){
+    var m = key==='heading' ? bins[j] : (counts[j] ? bins[j]/counts[j] : 0);
+    means.push(m); if(m>peak) peak = m;
+  }
+  if(peak<=0){ noData(c, 'No usable values yet'); return; }
+  var cx = w/2, cy = h/2, R = Math.min(w,h)/2 - 30;
+  ctx.strokeStyle = 'rgba(148,163,184,.2)';
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI*2); ctx.stroke();
+  ctx.fillStyle = '#8b98a9'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('N', cx, cy-R-10); ctx.fillText('S', cx, cy+R+10);
+  ctx.fillText('E', cx+R+10, cy); ctx.fillText('W', cx-R-10, cy);
+  for(var k=0;k<12;k++){
+    if(!means[k]) continue;
+    var a0 = toRad(k*30 - 90), a1 = toRad((k+1)*30 - 90);
+    var r = (means[k]/peak)*R;
+    ctx.beginPath(); ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, a0, a1); ctx.closePath();
+    ctx.fillStyle = hexA(seriesColor(key), .55); ctx.fill();
+  }
+  ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI*2); ctx.fillStyle = '#e6edf3'; ctx.fill();
+  ctx.fillStyle = '#8b98a9'; ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText(seriesLabel(key)+' by heading — longest spoke: '+fmt(peak,1)+' '+seriesUnit(key), 8, h-8);
+}
+/* distribution values for the histogram view (per-fix, display units) */
+function histValues(key){
+  var out = [], prev = null;
+  for(var i=0;i<S.samples.length;i++){
+    var s = S.samples[i], v = null;
+    if(key==='speed') v = speedVal(s.speed);
+    else if(key==='alt') v = s.alt===null ? null : altVal(s.alt);
+    else if(key==='accel') v = s.accel;
+    else if(key==='vspeed') v = s.vspeed===null ? null : vspeedVal(s.vspeed);
+    else if(key==='dist') v = prev ? distVal(s.dist - prev.dist) : 0;
+    else if(key==='heading') v = s.heading;
+    else if(key==='acc') v = s.acc;
+    else if(key==='g') v = Math.sqrt(s.g*s.g + s.latG*s.latG);
+    else if(key==='elevGain') v = (prev && s.alt!==null && prev.alt!==null && s.alt>prev.alt) ? altVal(s.alt-prev.alt) : 0;
+    else if(key==='elevLoss') v = (prev && s.alt!==null && prev.alt!==null && s.alt<prev.alt) ? altVal(prev.alt-s.alt) : 0;
+    if(v!==null && v!==undefined && !isNaN(v)) out.push(v);
+    prev = s;
+  }
+  return out;
+}
+function drawHistType(c, key){
+  var bin = 5;
+  if(key==='speed') bin = U()==='imperial' ? 5 : 10;
+  else if(key==='alt') bin = U()==='imperial' ? 50 : 20;
+  else if(key==='accel') bin = 0.5;
+  else if(key==='vspeed') bin = U()==='imperial' ? 100 : 5;
+  else if(key==='dist') bin = U()==='imperial' ? 0.05 : 0.1;
+  else if(key==='heading') bin = 30;
+  else if(key==='acc') bin = 10;
+  else if(key==='g') bin = 0.1;
+  else bin = U()==='imperial' ? 10 : 5;
+  drawHistogram(c, histValues(key), bin, seriesColor(key), seriesUnit(key));
+}
+function drawXYType(c, primaryKey, xKey){
+  var xv = seriesVals(xKey), yv = seriesVals(primaryKey);
+  var xs = [], ys = [];
+  for(var i=0;i<xv.length && i<yv.length;i++){
+    xs.push(seriesDisplay(xKey, xv[i]));
+    ys.push(seriesDisplay(primaryKey, yv[i]));
+  }
+  drawScatter(c, xs, ys, seriesLabel(xKey)+' ('+seriesUnit(xKey)+')', seriesLabel(primaryKey)+' ('+seriesUnit(primaryKey)+')', seriesColor(primaryKey));
+}
+function currentValue(key){
+  var last = S.samples.length ? S.samples[S.samples.length-1] : null;
+  if(!last) return null;
+  if(key==='speed') return speedVal(last.speed);
+  if(key==='alt') return last.alt===null ? null : altVal(last.alt);
+  if(key==='accel') return last.accel;
+  if(key==='vspeed') return last.vspeed===null ? null : vspeedVal(last.vspeed);
+  if(key==='dist') return distVal(S.tripDist);
+  if(key==='heading') return last.heading;
+  if(key==='acc') return last.acc;
+  if(key==='g') return Math.sqrt(last.g*last.g + last.latG*last.latG);
+  if(key==='elevGain') return altVal(S.elevGain);
+  if(key==='elevLoss') return altVal(S.elevLoss);
+  return null;
+}
+function metricRange(key){
+  if(key==='speed') return {min:0, max:speedMax()};
+  if(key==='accel') return {min:-5, max:5};
+  if(key==='vspeed') return U()==='imperial' ? {min:-1000, max:1000} : {min:-20, max:20};
+  if(key==='heading') return {min:0, max:360};
+  if(key==='acc') return {min:0, max:100};
+  if(key==='dist') return {min:0, max:Math.max(1, distVal(S.tripDist))};
+  if(key==='elevGain') return {min:0, max:Math.max(1, altVal(S.elevGain))};
+  if(key==='elevLoss') return {min:0, max:Math.max(1, altVal(S.elevLoss))};
+  if(key==='g') return {min:0, max:1};
+  if(key==='alt'){
+    var alts = [];
+    for(var i=0;i<S.samples.length;i++){ if(S.samples[i].alt!==null) alts.push(altVal(S.samples[i].alt)); }
+    if(alts.length){
+      var mn = Math.min.apply(null, alts), mx = Math.max.apply(null, alts);
+      if(mn===mx){ mn-=50; mx+=50; }
+      return {min:mn, max:mx};
+    }
+    return {min:0, max:1000};
+  }
+  return {min:0, max:100};
+}
+function renderChartPanel(chart){
+  var cfg = CHARTS[chart], st = chartState[chart];
+  var c = $(cfg.canvas);
+  if(!c) return;
+  if(st.type==='needle'){
+    var v = currentValue(cfg.primary), r = metricRange(cfg.primary);
+    if(v===null){ noData(c, 'No current value — start GPS or the Simulator'); }
+    else drawArcGauge(c, v, r.min, r.max, seriesColor(cfg.primary), seriesLabel(cfg.primary)+' ('+seriesUnit(cfg.primary)+')');
+    setLegend(chart, []);
+    return;
+  }
+  if(st.type==='rpm'){
+    var v2 = currentValue(cfg.primary), r2 = metricRange(cfg.primary);
+    if(v2===null){ noData(c, 'No current value — start GPS or the Simulator'); }
+    else drawRpmGauge(c, v2, r2.min, r2.max, seriesColor(cfg.primary), seriesLabel(cfg.primary)+' ('+seriesUnit(cfg.primary)+')');
+    setLegend(chart, []);
+    return;
+  }
+  if(st.type==='polar'){ drawPolar(c, cfg.primary); setLegend(chart, []); return; }
+  if(st.type==='histogram'){ drawHistType(c, cfg.primary); setLegend(chart, []); return; }
+  if(st.type==='xy'){ drawXYType(c, cfg.primary, st.xyKey); setLegend(chart, []); return; }
+  if(st.type==='ribbon'){ drawRibbonMetric(c, chart, cfg.primary, st.overlays); return; }
+  if(st.type==='sparkline'){ drawTimeChart(c, chart, cfg.primary, [], cfg.xMode, 'sparkline'); return; }
+  drawTimeChart(c, chart, cfg.primary, st.overlays, cfg.xMode, st.type);
+}
+function rangeFor(vals, key){
+  var mn = Infinity, mx = -Infinity, any = false;
+  for(var i=0;i<vals.length;i++){
+    var v = vals[i]; if(v===null||v===undefined||isNaN(v)) continue;
+    var d = seriesDisplay(key, v); if(d===null) continue;
+    any = true; if(d<mn) mn=d; if(d>mx) mx=d;
+  }
+  if(!any) return null;
+  if(mn===mx){ mn-=1; mx+=1; }
+  var pad = (mx-mn)*0.08; if(pad===0) pad = 1;
+  return { min:mn-pad, max:mx+pad };
+}
+function hexA(hex, a){
+  var r = parseInt(hex.slice(1,3),16), g2 = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return 'rgba('+r+','+g2+','+b+','+a+')';
+}
+
+/* ================= histograms & scatter ================= */
+function drawHistogram(c, values, binSize, color, unitLabel){
+  var g = ctx2d(c); if(!g) return;
+  var ctx = g.ctx, w = g.w, h = g.h;
+  var vals = [];
+  for(var i=0;i<values.length;i++){ var v = values[i]; if(v!==null&&v!==undefined&&!isNaN(v)) vals.push(v); }
+  if(vals.length < 2){ noData(c); return; }
+  var mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
+  if(mn===mx){ mn-=binSize; mx+=binSize; }
+  var lo = Math.floor(mn/binSize)*binSize, hi = Math.ceil(mx/binSize)*binSize;
+  var nb = Math.max(1, Math.min(500, Math.round((hi-lo)/binSize)));
+  var counts = []; for(var b=0;b<nb;b++) counts.push(0);
+  for(var j=0;j<vals.length;j++){ var bi = Math.min(nb-1, Math.floor((vals[j]-lo)/binSize)); counts[bi]++; }
+  var peak = Math.max.apply(null, counts);
+  var padL=34, padB=22, padT=8;
+  ctx.fillStyle = '#8b98a9'; ctx.font = '11px sans-serif'; ctx.textAlign = 'right';
+  var ticks = niceTicks(0, peak, 3);
+  for(var t=0;t<ticks.length;t++){
+    var y = padT + (1-ticks[t]/Math.max(1,peak))*(h-padT-padB);
+    ctx.strokeStyle = 'rgba(148,163,184,.12)';
+    ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(w-8,y); ctx.stroke();
+    ctx.fillText(String(ticks[t]), padL-5, y+4);
+  }
+  var bw = (w-padL-8)/nb;
+  for(var k=0;k<nb;k++){
+    var bh = (counts[k]/Math.max(1,peak))*(h-padT-padB);
+    ctx.fillStyle = hexA(color, 0.85);
+    ctx.fillRect(padL + k*bw + 1, h-padB-bh, Math.max(1,bw-2), bh);
+  }
+  ctx.fillStyle = '#8b98a9'; ctx.textAlign = 'center';
+  ctx.fillText(fmt(lo,0)+' '+unitLabel, padL+16, h-7);
+  ctx.fillText(fmt(hi,0)+' '+unitLabel, w-30, h-7);
+}
+function drawScatter(c, xs, ys, xLab, yLab, color){
+  var g = ctx2d(c); if(!g) return;
+  var ctx = g.ctx, w = g.w, h = g.h;
+  var pts = [];
+  for(var i=0;i<xs.length && i<ys.length;i++){
+    if(xs[i]===null||ys[i]===null||isNaN(xs[i])||isNaN(ys[i])) continue;
+    pts.push({ x:xs[i], y:ys[i] });
+  }
+  if(pts.length < 2){ noData(c); return; }
+  var xmn = Infinity, xmx = -Infinity, ymn = Infinity, ymx = -Infinity;
+  for(var j=0;j<pts.length;j++){
+    if(pts[j].x<xmn) xmn=pts[j].x; if(pts[j].x>xmx) xmx=pts[j].x;
+    if(pts[j].y<ymn) ymn=pts[j].y; if(pts[j].y>ymx) ymx=pts[j].y;
+  }
+  if(xmn===xmx){ xmn-=1; xmx+=1; } if(ymn===ymx){ ymn-=1; ymx+=1; }
+  var padL=40, padB=24, padT=10, padR=10;
+  ctx.strokeStyle = 'rgba(148,163,184,.12)';
+  ctx.fillStyle = '#8b98a9'; ctx.font = '11px sans-serif';
+  var yt = niceTicks(ymn, ymx, 4);
+  for(var t=0;t<yt.length;t++){
+    var y = padT + (1-(yt[t]-ymn)/(ymx-ymn))*(h-padT-padB);
+    ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(w-padR,y); ctx.stroke();
+    ctx.textAlign = 'right'; ctx.fillText(fmt(yt[t],1), padL-5, y+4);
+  }
+  var xt = niceTicks(xmn, xmx, 4);
+  ctx.textAlign = 'center';
+  for(var xi=0;xi<xt.length;xi++){
+    var xx = padL + ((xt[xi]-xmn)/(xmx-xmn))*(w-padL-padR);
+    ctx.fillText(fmt(xt[xi],0), xx, h-8);
+  }
+  ctx.fillStyle = hexA(color, 0.7);
+  var stride = Math.max(1, Math.ceil(pts.length/300));
+  for(var p=0;p<pts.length;p+=stride){
+    var px = padL + ((pts[p].x-xmn)/(xmx-xmn))*(w-padL-padR);
+    var py = padT + (1-(pts[p].y-ymn)/(ymx-ymn))*(h-padT-padB);
+    ctx.beginPath(); ctx.arc(px, py, 3, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.fillStyle = '#8b98a9'; ctx.textAlign = 'left'; ctx.fillText(yLab, padL, 12);
+  ctx.textAlign = 'right'; ctx.fillText(xLab, w-padR, 12);
+}
+
+/* ================= g-force circle & compass & trail ================= */
+function renderGCircle(){
+  var c = $('gCircle');
+  var g = ctx2d(c); if(!g) return;
+  var ctx = g.ctx, w = g.w, h = g.h;
+  var cx = w/2, cy = h/2, R = Math.min(w,h)/2 - 18;
+  var scale = R/1.2; // 1.2 g at the edge
+  ctx.strokeStyle = 'rgba(148,163,184,.25)'; ctx.lineWidth = 1.5;
+  for(var rr=0.5; rr<=1.0; rr+=0.5){
+    ctx.beginPath(); ctx.arc(cx, cy, rr*scale, 0, Math.PI*2); ctx.stroke();
+  }
+  ctx.beginPath(); ctx.moveTo(cx-R, cy); ctx.lineTo(cx+R, cy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx, cy-R); ctx.lineTo(cx, cy+R); ctx.stroke();
+  ctx.fillStyle = '#8b98a9'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('BRAKE', cx-R+22, cy-8);
+  ctx.fillText('ACCEL', cx+R-22, cy-8);
+  ctx.fillText('1.0 g', cx+6, cy-R+12);
+  var n = S.samples.length;
+  if(n < 1){ noData(c, 'No g data yet'); return; }
+  var start = Math.max(0, n-40);
+  for(var i=start;i<n;i++){
+    var s = S.samples[i];
+    var x = cx + clamp(s.latG,-1.2,1.2)*scale;
+    var y = cy - clamp(s.g,-1.2,1.2)*scale;
+    ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(45,212,191,'+(0.15+0.6*(i-start)/Math.max(1,(n-start)))+')'; ctx.fill();
+  }
+  var last = S.samples[n-1];
+  var lx = cx + clamp(last.latG,-1.2,1.2)*scale;
+  var ly = cy - clamp(last.g,-1.2,1.2)*scale;
+  ctx.beginPath(); ctx.arc(lx, ly, 7, 0, Math.PI*2);
+  ctx.fillStyle = '#fb7185'; ctx.shadowColor = '#fb7185'; ctx.shadowBlur = 12; ctx.fill(); ctx.shadowBlur = 0;
+}
+function renderTrail(){
+  var c = $('trail');
+  var g = ctx2d(c); if(!g) return;
+  var ctx = g.ctx, w = g.w, h = g.h;
+  if(S.samples.length < 2){ noData(c, 'No route yet — drive or run the Simulator'); return; }
+  var mnLat = Infinity, mxLat = -Infinity, mnLon = Infinity, mxLon = -Infinity;
+  for(var i=0;i<S.samples.length;i++){
+    var s = S.samples[i];
+    if(s.lat<mnLat) mnLat=s.lat; if(s.lat>mxLat) mxLat=s.lat;
+    if(s.lon<mnLon) mnLon=s.lon; if(s.lon>mxLon) mxLon=s.lon;
+  }
+  var spanLat = Math.max(0.0005, mxLat-mnLat), spanLon = Math.max(0.0005, mxLon-mnLon);
+  var pad = 30;
+  var sx = (w-pad*2)/spanLon, sy = (h-pad*2)/spanLat;
+  var sc = Math.min(sx, sy);
+  var ox = pad + ((w-pad*2) - spanLon*sc)/2, oy = pad + ((h-pad*2) - spanLat*sc)/2;
+  function P(s){ return { x: ox + (s.lon-mnLon)*sc, y: oy + (1-(s.lat-mnLat)/spanLat)*(spanLat*sc) }; }
+  ctx.beginPath();
+  for(var j=0;j<S.samples.length;j++){
+    var p = P(S.samples[j]);
+    if(j===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y);
+  }
+  ctx.strokeStyle = '#2dd4bf'; ctx.lineWidth = 2.5;
+  ctx.shadowColor = '#2dd4bf'; ctx.shadowBlur = 6; ctx.stroke(); ctx.shadowBlur = 0;
+  // heading arrows
+  ctx.fillStyle = 'rgba(230,237,243,.75)';
+  for(var k=4;k<S.samples.length;k+=6){
+    var s2 = S.samples[k];
+    if(s2.heading===null||s2.heading===undefined) continue;
+    var p2 = P(s2), a = toRad(s2.heading);
+    var ax = Math.sin(a), ay = -Math.cos(a);
+    ctx.beginPath();
+    ctx.moveTo(p2.x + ax*9, p2.y + ay*9);
+    ctx.lineTo(p2.x - ay*4 - ax*5, p2.y + ax*4 - ay*5);
+    ctx.lineTo(p2.x + ay*4 - ax*5, p2.y - ax*4 - ay*5);
+    ctx.closePath(); ctx.fill();
+  }
+  var p0 = P(S.samples[0]);
+  ctx.beginPath(); ctx.arc(p0.x, p0.y, 6, 0, Math.PI*2); ctx.fillStyle = '#4ade80'; ctx.fill();
+  var pL = P(S.samples[S.samples.length-1]);
+  ctx.beginPath(); ctx.arc(pL.x, pL.y, 7, 0, Math.PI*2); ctx.fillStyle = '#fb7185';
+  ctx.shadowColor = '#fb7185'; ctx.shadowBlur = 10; ctx.fill(); ctx.shadowBlur = 0;
+}
+
+/* ================= lists, stats, bands ================= */
+function renderEvents(){
+  var bl = $('brakeList');
+  if(!S.brakeEvents.length){ bl.innerHTML = '<li class="empty">No braking events yet.</li>'; }
+  else{
+    var html = '';
+    for(var i=0;i<S.brakeEvents.length;i++){
+      var e = S.brakeEvents[i];
+      html += '<li><span class="t">'+fmtTimeOfDay(e.t0)+'</span><span>'+fmtSpeed(e.from,0)+' → '+fmtSpeed(e.to,0)+'</span><span class="g">'+fmt(e.peakG,2)+' g</span></li>';
+    }
+    bl.innerHTML = html;
+  }
+  var al = $('accelList');
+  if(!S.accelEvents.length){ al.innerHTML = '<li class="empty">No acceleration events yet.</li>'; }
+  else{
+    var html2 = '';
+    for(var j=0;j<S.accelEvents.length;j++){
+      var e2 = S.accelEvents[j];
+      html2 += '<li><span class="t">'+fmtTimeOfDay(e2.t0)+'</span><span>'+fmtSpeed(e2.from,0)+' → '+fmtSpeed(e2.to,0)+'</span><span class="g pos">'+fmt(e2.peakG,2)+' g</span></li>';
+    }
+    al.innerHTML = html2;
+  }
+}
+function renderStops(){
+  var sl = $('stopList');
+  var items = S.stops.slice();
+  if(S.stopActive){
+    items.unshift({ t0:S.stopActive.t0, t1:Date.now(), dur:(Date.now()-S.stopActive.t0)/1000 });
+  }
+  if(!items.length){ sl.innerHTML = '<li class="empty">No stops recorded yet.</li>'; return; }
+  var html = '';
+  for(var i=0;i<items.length;i++){
+    var s = items[i];
+    html += '<li><span class="t">'+fmtTimeOfDay(s.t0)+'</span><span>'+fmtClock(s.dur*1000)+' stopped</span><span>'+(i===0 && S.stopActive ? 'now' : fmtTimeOfDay(s.t1))+'</span></li>';
+  }
+  sl.innerHTML = html;
+}
+function movingTime(){
+  var t = 0;
+  for(var i=1;i<S.samples.length;i++){
+    if(S.samples[i].speed > 0.5) t += (S.samples[i].t - S.samples[i-1].t)/1000;
+  }
+  return t;
+}
+function renderStats(){
+  var total = S.tripStart ? (Date.now()-S.tripStart)/1000 : 0;
+  var mv = movingTime();
+  var avg = total>0 ? S.tripDist/total : 0;
+  var avgMv = mv>0 ? S.tripDist/mv : 0;
+  var tiles = [
+    ['Trip time', fmtClock(total*1000)],
+    ['Moving time', fmtClock(mv*1000)],
+    ['Distance', fmtDist(S.tripDist,2)],
+    ['Avg speed', fmtSpeed(avg,0)],
+    ['Avg moving', fmtSpeed(avgMv,0)],
+    ['Max speed', fmtSpeed(S.maxSpeed,0)],
+    ['Max accel', fmtAccelG(S.maxAccel)],
+    ['Max decel', fmtAccelG(S.maxDecel)],
+    ['Elev gain', fmtAlt(S.elevGain,0)],
+    ['Elev loss', fmtAlt(S.elevLoss,0)],
+    ['Stops', String(S.stops.length + (S.stopActive?1:0))],
+    ['Fixes', String(S.fixes.length)]
+  ];
+  var html = '';
+  for(var i=0;i<tiles.length;i++){
+    html += '<div class="tile"><div class="tv">'+esc(tiles[i][1])+'</div><div class="tl">'+esc(tiles[i][0])+'</div></div>';
+  }
+  $('statsTiles').innerHTML = html;
+}
+function renderBands(){
+  var bounds = [8.94, 17.88, 26.82]; // 20 / 40 / 60 mph in m/s
+  var labels = U()==='imperial' ? ['0–20 mph','20–40 mph','40–60 mph','60+ mph']
+    : ['0–32 km/h','32–64 km/h','64–97 km/h','97+ km/h'];
+  var times = [0,0,0,0];
+  for(var i=1;i<S.samples.length;i++){
+    var dt = (S.samples[i].t - S.samples[i-1].t)/1000;
+    var v = S.samples[i].speed;
+    var bi = v<bounds[0]?0 : v<bounds[1]?1 : v<bounds[2]?2 : 3;
+    times[bi] += dt;
+  }
+  var total = times[0]+times[1]+times[2]+times[3];
+  var colors = ['','c2','c3','c4'];
+  var html = '';
+  for(var b=0;b<4;b++){
+    var pct = total>0 ? (times[b]/total*100) : 0;
+    html += '<div class="bar-row"><span>'+labels[b]+'</span><div class="bar-track"><div class="bar-fill '+colors[b]+'" style="width:'+pct.toFixed(1)+'%"></div></div><span class="bv">'+fmtClock(times[b]*1000)+'</span></div>';
+  }
+  $('speedBands').innerHTML = html;
+}
+function renderPercentiles(){
+  var speeds = [];
+  for(var i=0;i<S.samples.length;i++){ if(S.samples[i].speed > 0.5) speeds.push(S.samples[i].speed); }
+  if(speeds.length < 5){
+    $('p50').textContent='—'; $('p90').textContent='—'; $('p99').textContent='—';
+    $('pctVal50').textContent='—'; $('pctVal90').textContent='—'; $('pctVal99').textContent='—';
+    return;
+  }
+  speeds.sort(function(a,b){ return a-b; });
+  function pct(p){ return speeds[Math.min(speeds.length-1, Math.floor(p*speeds.length))]; }
+  var p50 = pct(0.5), p90 = pct(0.9), p99 = pct(0.99);
+  var mx = S.maxSpeed || p99 || 1;
+  $('p50').textContent = fmtSpeed(p50,0);
+  $('p90').textContent = fmtSpeed(p90,0);
+  $('p99').textContent = fmtSpeed(p99,0);
+  $('pctVal50').textContent = fmtSpeed(p50,0);
+  $('pctVal90').textContent = fmtSpeed(p90,0);
+  $('pctVal99').textContent = fmtSpeed(p99,0);
+  $('pctBar50').style.width = (p50/mx*100).toFixed(1)+'%';
+  $('pctBar90').style.width = (p90/mx*100).toFixed(1)+'%';
+  $('pctBar99').style.width = (p99/mx*100).toFixed(1)+'%';
+}
+
+/* ================= ribbon, timeline, spark, heading rose ================= */
+function renderRibbon(){
+  var c = $('ribbon');
+  var g = ctx2d(c); if(!g) return;
+  var ctx = g.ctx, w = g.w, h = g.h;
+  var n = S.samples.length;
+  if(n < 2){ noData(c, 'Last 60 seconds will appear here once moving'); return; }
+  var tEnd = S.samples[n-1].t, tStart = tEnd - 60000;
+  var win = [];
+  for(var i=0;i<n;i++){ if(S.samples[i].t >= tStart) win.push(S.samples[i]); }
+  if(win.length < 2){ noData(c, 'Waiting for more fixes in the last 60 seconds'); return; }
+  var mx = 1;
+  for(var j=0;j<win.length;j++){ if(win[j].speed > mx) mx = win[j].speed; }
+  var padL=8, padR=8, padT=8, padB=18;
+  var bw = (w-padL-padR)/60; // one bar per second of the window
+  for(var k=0;k<win.length;k++){
+    var s = win[k];
+    var x = padL + ((s.t - tStart)/60000)*(w-padL-padR);
+    var bh = (s.speed/mx)*(h-padT-padB);
+    var frac = s.speed/mx;
+    ctx.fillStyle = frac < 0.4 ? '#2dd4bf' : (frac < 0.75 ? '#fbbf24' : '#fb7185');
+    ctx.fillRect(x, h-padB-bh, Math.max(2, bw-1), bh);
+  }
+  ctx.fillStyle = '#8b98a9'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('60 s ago', padL+26, h-5);
+  ctx.fillText('now', w-padR-14, h-5);
+  ctx.textAlign = 'left'; ctx.fillText('0', padL, h-5);
+}
+function renderTimeline(){
+  var c = $('timeline');
+  var g = ctx2d(c); if(!g) return;
+  var ctx = g.ctx, w = g.w, h = g.h;
+  var n = S.samples.length;
+  if(n < 2){ noData(c, 'Trip timeline will build here as you drive'); return; }
+  var t0 = S.samples[0].t, t1 = S.samples[n-1].t, span = Math.max(1, t1-t0);
+  var y = h/2 - 14;
+  for(var i=1;i<n;i++){
+    var s = S.samples[i];
+    var x0 = ((S.samples[i-1].t - t0)/span)*w;
+    var x1 = ((s.t - t0)/span)*w;
+    var col = '#2dd4bf';
+    if(s.speed < 0.5) col = '#5b6b7d';
+    else if(s.accel < -1.2) col = '#fb7185';
+    else if(s.accel > 1.2) col = '#4ade80';
+    ctx.fillStyle = col;
+    ctx.fillRect(x0, y, Math.max(1, x1-x0), 28);
+  }
+  ctx.fillStyle = '#8b98a9'; ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('start ' + fmtTimeOfDay(t0), 2, 14);
+  ctx.textAlign = 'right';
+  ctx.fillText('now ' + fmtTimeOfDay(t1), w-2, 14);
+}
+function renderSpark(){
+  var c = $('sparkSpeed');
+  var g = ctx2d(c); if(!g) return;
+  var ctx = g.ctx, w = g.w, h = g.h;
+  var n = S.samples.length;
+  if(n < 2){ noData(c); $('sparkDelta').textContent = '—'; return; }
+  var win = S.samples.slice(Math.max(0, n-90));
+  var mx = 1;
+  for(var i=0;i<win.length;i++){ var dv = speedVal(win[i].speed); if(dv > mx) mx = dv; }
+  var padL=6, padR=6, padT=8, padB=6;
+  ctx.beginPath();
+  for(var j=0;j<win.length;j++){
+    var x = padL + (j/Math.max(1,win.length-1))*(w-padL-padR);
+    var y = padT + (1 - speedVal(win[j].speed)/mx)*(h-padT-padB);
+    if(j===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  ctx.strokeStyle = '#2dd4bf'; ctx.lineWidth = 2;
+  ctx.shadowColor = '#2dd4bf'; ctx.shadowBlur = 6; ctx.stroke(); ctx.shadowBlur = 0;
+  var first = win[0].speed, last = win[win.length-1].speed;
+  var d = speedVal(last) - speedVal(first);
+  var el = $('sparkDelta');
+  if(win.length < 3){ el.textContent = '—'; }
+  else{
+    el.textContent = (d>=0?'+':'−') + fmt(Math.abs(d),0) + ' ' + speedUnit() + ' vs ' + Math.min(90, Math.round((win[win.length-1].t - win[0].t)/1000)) + 's ago';
+    el.style.color = d > 0.5 ? '#4ade80' : (d < -0.5 ? '#fb7185' : '#e6edf3');
+  }
+}
+function renderHeadingRose(){
+  var c = $('headingRose');
+  var g = ctx2d(c); if(!g) return;
+  var ctx = g.ctx, w = g.w, h = g.h;
+  var bins = []; for(var b=0;b<12;b++) bins.push(0);
+  for(var i=0;i<S.samples.length;i++){
+    var s = S.samples[i];
+    if(s.heading===null||s.heading===undefined||s.speed < 0.5) continue;
+    bins[Math.floor((((s.heading%360)+360)%360)/30)]++;
+  }
+  var total = 0; for(var t=0;t<12;t++) total += bins[t];
+  var cx = w/2, cy = h/2, R = Math.min(w,h)/2 - 24;
+  if(total < 1){ noData(c, 'Headings will fill the rose once moving'); return; }
+  var peak = Math.max.apply(null, bins);
+  ctx.strokeStyle = 'rgba(148,163,184,.2)';
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI*2); ctx.stroke();
+  ctx.fillStyle = '#8b98a9'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('N', cx, cy-R-10); ctx.fillText('S', cx, cy+R+10);
+  ctx.fillText('E', cx+R+10, cy); ctx.fillText('W', cx-R-10, cy);
+  for(var k=0;k<12;k++){
+    if(!bins[k]) continue;
+    var a0 = toRad(k*30 - 90), a1 = toRad((k+1)*30 - 90);
+    var r = (bins[k]/peak)*R;
+    ctx.beginPath(); ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, a0, a1); ctx.closePath();
+    ctx.fillStyle = 'rgba(45,212,191,.55)'; ctx.fill();
+  }
+  ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI*2); ctx.fillStyle = '#e6edf3'; ctx.fill();
+}
+
+/* ================= hero & status ================= */
+function renderHero(){
+  var n = S.samples.length;
+  var last = n ? S.samples[n-1] : null;
+  var spd = last ? last.speed : 0;
+  $('hSpeed').innerHTML = fmt(speedVal(spd),0) + ' <small>'+speedUnit()+'</small>';
+  var sub = 'standing still';
+  if(last){
+    if(last.accel > 0.3) sub = 'accelerating';
+    else if(last.accel < -0.3) sub = 'braking';
+    else if(spd > 0.5) sub = 'cruising';
+  }
+  $('hSpeedSub').textContent = sub;
+  if(last && last.alt!==null){
+    $('hAlt').innerHTML = fmt(altVal(last.alt),0) + ' <small>'+altUnit()+'</small>';
+    $('hAltSub').textContent = 'GPS altitude';
+  } else { $('hAlt').textContent = '—'; $('hAltSub').textContent = 'altitude unavailable'; }
+  $('hVspeed').innerHTML = (last && last.vspeed!==null) ? fmt(vspeedVal(last.vspeed),0)+' <small>'+vspeedUnit()+'</small>' : '—';
+  $('hAccel').innerHTML = fmt((last?last.accel:0)/9.81,2) + ' <small>g</small>';
+  $('hAccelSub').textContent = (last && last.accel < 0) ? 'decelerating' : 'longitudinal';
+  $('hDecel').innerHTML = fmt((-S.maxDecel)/9.81,2) + ' <small>g</small>';
+  $('hDist').innerHTML = fmt(distVal(S.tripDist),2) + ' <small>'+distUnit()+'</small>';
+  $('hTime').textContent = S.tripStart ? fmtClock(Date.now()-S.tripStart) : '00:00';
+  var total = S.tripStart ? (Date.now()-S.tripStart)/1000 : 0;
+  $('hAvg').innerHTML = fmt(speedVal(total>0 ? S.tripDist/total : 0),0) + ' <small>'+speedUnit()+'</small>';
+  $('hMax').innerHTML = fmt(speedVal(S.maxSpeed),0) + ' <small>'+speedUnit()+'</small>';
+  $('hMaxSub').textContent = S.maxSpeedAt ? 'at ' + fmtTimeOfDay(S.maxSpeedAt) : '—';
+  if(last && last.heading!==null && last.heading!==undefined){
+    $('hHead').innerHTML = fmt(last.heading,0) + '° <small>'+cardinal(last.heading)+'</small>';
+    $('hHeadSub').textContent = cardinal(last.heading) + ' — ' + fmt(last.heading,0) + '°';
+  } else { $('hHead').textContent = '—'; $('hHeadSub').textContent = 'compass'; }
+  $('hLat').textContent = last ? last.lat.toFixed(5) : '—';
+  $('hLon').textContent = last ? last.lon.toFixed(5) : '—';
+  $('hGain').innerHTML = fmt(altVal(S.elevGain),0) + ' <small>'+altUnit()+'</small>';
+  $('hLoss').innerHTML = fmt(altVal(S.elevLoss),0) + ' <small>'+altUnit()+'</small>';
+  var cg = last ? Math.sqrt(last.g*last.g + last.latG*last.latG) : 0;
+  $('hG').innerHTML = fmt(cg,2) + ' <small>g</small>';
+  $('hGSub').textContent = 'combined accel';
+}
+function renderStatus(){
+  var age = S.lastFixTime ? Math.round((Date.now()-S.lastFixTime)/1000) : null;
+  $('lastFix').textContent = age===null ? '—' : (age < 2 ? 'just now' : age + 's ago');
+  $('gpsAcc').textContent = (S.lastFix && S.lastFix.acc!==null) ? '±' + Math.round(S.lastFix.acc) + ' m' : '—';
+  $('fixCount').textContent = String(S.fixes.length);
+}
+function renderGauges(){
+  var n = S.samples.length;
+  var last = n ? S.samples[n-1] : null;
+  drawArcGauge($('gaugeSpeed'), last ? speedVal(last.speed) : 0, 0, speedMax(), '#2dd4bf', speedUnit());
+  $('gaugeSpeedVal').innerHTML = fmt(speedVal(last ? last.speed : 0),0) + ' <small>'+speedUnit()+'</small>';
+  // altitude gauge: range from observed min/max
+  var alts = [];
+  for(var i=0;i<n;i++){ if(S.samples[i].alt!==null) alts.push(altVal(S.samples[i].alt)); }
+  if(alts.length && last && last.alt!==null){
+    var mn = Math.min.apply(null, alts), mx = Math.max.apply(null, alts);
+    if(mn===mx){ mn-=50; mx+=50; }
+    drawArcGauge($('gaugeAlt'), altVal(last.alt), mn, mx, '#fbbf24', altUnit());
+    $('gaugeAltVal').textContent = fmtAlt(last.alt,0);
+  } else {
+    drawArcGauge($('gaugeAlt'), 0, 0, 1000, '#fbbf24', altUnit());
+    $('gaugeAltVal').textContent = '—';
+  }
+  var vs = last && last.vspeed!==null ? vspeedVal(last.vspeed) : 0;
+  var vsMin = U()==='imperial' ? -1000 : -20, vsMax = U()==='imperial' ? 1000 : 20;
+  drawArcGauge($('gaugeVspeed'), vs, vsMin, vsMax, '#38bdf8', vspeedUnit());
+  $('gaugeVspeedVal').innerHTML = (last && last.vspeed!==null) ? fmt(vs,0)+' <small>'+vspeedUnit()+'</small>' : '—';
+  var cg = last ? Math.sqrt(last.g*last.g + last.latG*last.latG) : 0;
+  drawArcGauge($('gGauge'), cg, 0, 1, '#fb7185', 'g');
+  $('gGaugeVal').innerHTML = fmt(cg,2) + ' <small>g</small>';
+}
+function renderZ60(){
+  $('z60Val').textContent = S.z60Last!==null ? fmt(S.z60Last,1)+' s' : '—';
+  $('z60Best').textContent = S.z60Best!==null ? fmt(S.z60Best,1)+' s' : '—';
+  $('z60Status').textContent = S.z60Armed ? 'timing — rolling…' :
+    (S.z60Last!==null ? 'last run ' + fmt(S.z60Last,1) + ' s' : 'waiting for a launch');
+}
+function renderMaxSpeed(){
+  $('maxSpeedVal').innerHTML = fmt(speedVal(S.maxSpeed),0) + ' <small>'+speedUnit()+'</small>';
+  $('maxSpeedTime').textContent = S.maxSpeedAt ? fmtTimeOfDay(S.maxSpeedAt) : '—';
+  $('maxSpeedDist').textContent = S.maxSpeedAt ? fmtDist(S.maxSpeedDist,2) : '—';
+  var ref = U()==='imperial' ? 44.704 : 44.704; // 100 mph in m/s
+  var pct = Math.min(100, S.maxSpeed/ref*100);
+  $('maxSpeedBar').style.width = pct.toFixed(1)+'%';
+  $('maxSpeedPct').textContent = pct.toFixed(0)+'%';
+}
+function renderPosition(){
+  var last = S.lastFix;
+  $('posLat').textContent = last ? last.lat.toFixed(6) : '—';
+  $('posLon').textContent = last ? last.lon.toFixed(6) : '—';
+  $('posAcc').textContent = (last && last.acc!==null) ? '±' + Math.round(last.acc) + ' m' : '—';
+  $('posFixes').textContent = String(S.fixes.length);
+  $('posLast').textContent = S.lastFixTime ? fmtTimeOfDay(S.lastFixTime) + ' (' + Math.round((Date.now()-S.lastFixTime)/1000) + 's ago)' : '—';
+  $('motionStatus').textContent = S.motionStatus;
+}
+
+/* ================= master render ================= */
+function renderAll(){
+  renderStatus();
+  renderHero();
+  renderGauges();
+  drawCompass($('compass'), S.samples.length ? S.samples[S.samples.length-1].heading : null);
+  var lastH = S.samples.length ? S.samples[S.samples.length-1].heading : null;
+  $('compassVal').innerHTML = (lastH!==null && lastH!==undefined) ? fmt(lastH,0)+'° <small>'+cardinal(lastH)+'</small>' : '—';
+  renderGCircle();
+  renderTrail();
+  renderChartPanel('speed');
+  renderChartPanel('alt');
+  renderChartPanel('accel');
+  renderChartPanel('vspeed');
+  renderChartPanel('dist');
+  renderChartPanel('heading');
+  renderChartPanel('elevDist');
+  renderChartPanel('elevCum');
+  renderChartPanel('acc');
+  // histograms
+  var spVals = [], alVals = [], acVals = [];
+  for(var i=0;i<S.samples.length;i++){
+    spVals.push(speedVal(S.samples[i].speed));
+    if(S.samples[i].alt!==null) alVals.push(altVal(S.samples[i].alt));
+    acVals.push(S.samples[i].accel);
+  }
+  drawHistogram($('histSpeed'), spVals, U()==='imperial'?5:10, '#2dd4bf', speedUnit());
+  drawHistogram($('histAlt'), alVals, U()==='imperial'?50:20, '#fbbf24', altUnit());
+  drawHistogram($('histAccel'), acVals, 0.5, '#fb7185', 'm/s²');
+  // scatter
+  var sx1 = [], sy1 = [], sx2 = [], sy2 = [];
+  for(var j=0;j<S.samples.length;j++){
+    sx1.push(speedVal(S.samples[j].speed));
+    sy1.push(S.samples[j].alt===null ? null : altVal(S.samples[j].alt));
+    sx2.push(speedVal(S.samples[j].speed));
+    sy2.push(S.samples[j].accel);
+  }
+  drawScatter($('scatSpeedAlt'), sx1, sy1, 'Speed ('+speedUnit()+')', 'Altitude ('+altUnit()+')', '#fbbf24');
+  drawScatter($('scatAccelSpeed'), sx2, sy2, 'Speed ('+speedUnit()+')', 'Accel (m/s²)', '#fb7185');
+  renderBands();
+  renderStats();
+  renderEvents();
+  renderStops();
+  renderZ60();
+  renderMaxSpeed();
+  renderRibbon();
+  renderTimeline();
+  renderHeadingRose();
+  renderSpark();
+  renderPercentiles();
+  renderPosition();
+}
+
+/* ================= wiring & init ================= */
+$('btnStart').addEventListener('click', function(){ startGPS(); });
+$('btnPause').addEventListener('click', function(){
+  S.paused = !S.paused; updateButtons();
+});
+$('btnReset').addEventListener('click', function(){ resetTrip(); renderAll(); });
+$('btnSim').addEventListener('click', function(){
+  if(S.mode==='sim') stopSim(); else startSim();
+  renderAll();
+});
+$('btnExport').addEventListener('click', function(){ exportCSV(); });
+$('unitsBtn').addEventListener('click', function(){
+  S.units = (S.units==='imperial') ? 'metric' : 'imperial';
+  try{ localStorage.setItem('tesla-telemetry-units', S.units); }catch(e){}
+  $('unitsBtn').textContent = (S.units==='imperial') ? 'mph / ft' : 'km/h / m';
+  renderAll();
+});
+$('unitsBtn').textContent = (S.units==='imperial') ? 'mph / ft' : 'km/h / m';
+initChartControls();
+updateButtons();
+renderAll();
+setInterval(renderAll, 500);
+window.addEventListener('resize', function(){ renderAll(); });
+})();
+</script>
+</body>
+</html>
