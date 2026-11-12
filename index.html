@@ -135,6 +135,7 @@ ul.ev .g.pos{color:var(--green)}
   <span class="stat-chip">Last fix <b id="lastFix">—</b></span>
   <span class="stat-chip">Accuracy <b id="gpsAcc">—</b></span>
   <span class="stat-chip">Fixes <b id="fixCount">0</b></span>
+  <span class="stat-chip"><b id="spdDbg">GPS spd — · calc —</b></span>
   <span class="spacer"></span>
   <button class="btn ghost" id="unitsBtn" type="button">mph / ft</button>
   <button class="btn primary" id="btnStart" type="button">Start GPS</button>
@@ -586,8 +587,11 @@ function ingestFix(f){
     if(derived > 90) derived = 90; // 90 m/s = 201 mph: no road speed is above this
     var spd = null;
     if(f.speed!==null && f.speed!==undefined && f.speed>=0 && f.speed<90) spd = f.speed;
-    if(spd===null || Math.abs(spd-derived) > Math.max(3, spd*0.35)) spd = derived;
+    if(spd===null) spd = derived;
+    else if(derived > 0.5 && Math.abs(spd-derived) > Math.max(3, spd*0.35)) spd = derived;
     smp.speed = spd;
+    smp.gpsSpd = (f.speed===null||f.speed===undefined) ? null : f.speed;
+    smp.derivedSpd = derived;
     smp.dist = S.tripDist + d;
     S.tripDist = smp.dist;
     smp.accel = (spd - prev.speed)/dt;
@@ -618,6 +622,8 @@ function ingestFix(f){
     detectStops(prev, smp, dt);
   } else {
     smp.speed = (f.speed!==null && f.speed!==undefined && f.speed>=0 && f.speed<90) ? f.speed : 0;
+    smp.gpsSpd = (f.speed===null||f.speed===undefined) ? null : f.speed;
+    smp.derivedSpd = null;
     smp.heading = (f.heading!==null && f.heading!==undefined && !isNaN(f.heading)) ? f.heading : null;
     if(smp.speed > S.maxSpeed){ S.maxSpeed = smp.speed; S.maxSpeedAt = now; S.maxSpeedDist = 0; }
   }
@@ -2059,6 +2065,15 @@ function renderStatus(){
   $('lastFix').textContent = age===null ? '—' : (age < 2 ? 'just now' : age + 's ago');
   $('gpsAcc').textContent = (S.lastFix && S.lastFix.acc!==null) ? '±' + Math.round(S.lastFix.acc) + ' m' : '—';
   $('fixCount').textContent = String(S.fixes.length);
+  var dbg = $('spdDbg');
+  if(dbg){
+    var ls = S.samples.length ? S.samples[S.samples.length-1] : null;
+    if(ls && ls.gpsSpd!==null && ls.gpsSpd!==undefined){
+      dbg.textContent = 'GPS spd ' + fmt(speedVal(ls.gpsSpd),0) + ' ' + speedUnit() + ' · calc ' + ((ls.derivedSpd===null||ls.derivedSpd===undefined) ? '—' : fmt(speedVal(ls.derivedSpd),0) + ' ' + speedUnit());
+    } else {
+      dbg.textContent = 'GPS spd — · calc —';
+    }
+  }
 }
 function renderGauges(){
   var n = S.samples.length;
